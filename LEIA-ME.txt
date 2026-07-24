@@ -1,0 +1,26 @@
+BLESSY — projeto para Vercel + GitHub
+=====================================
+
+TODOS os arquivos estão SOLTOS, sem nenhuma pasta. É isso que resolve o problema:
+o GitHub aceita vários arquivos arrastados de uma vez, mas engasga com pastas.
+
+COMO SUBIR
+1. No seu repositório do GitHub: Add file -> Upload files.
+2. Selecione TODOS os arquivos desta pasta de uma vez (Ctrl+A) e arraste para a área
+   de upload. NÃO arraste a pasta — arraste os arquivos.
+3. Commit changes.
+4. Vercel -> Add New -> Project -> importe o repositório.
+   Framework Preset: Other. Build Command e Output Directory: em branco.
+5. Deploy.
+
+Se algum arquivo faltar, o site continua abrindo: as fotos que faltarem aparecem como
+texto e, se os vídeos faltarem, os círculos desaparecem sozinhos.
+
+ANTES DE ANUNCIAR
+- og-image.jpg: a meta tag de compartilhamento aponta para
+  https://SEU-DOMINIO.com.br/og-image.jpg — troque pelo seu domínio e suba a imagem.
+- infoRotulo (no index.html): ingredientes, informação nutricional, alérgicos e
+  advertências por sabor estão em branco, aguardando o texto do rótulo.
+- REVIEWS: avaliações demonstrativas. Substitua pelas reais.
+- Pixel 1028592796448984 instalado. O evento Purchase deve ser disparado na página de
+  obrigado do checkout. O token da API de Conversões não está no código — use só no servidor.

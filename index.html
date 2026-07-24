@@ -1,0 +1,3015 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+// GENERATED from dc-runtime/src/*.ts — do not edit. Rebuild with `cd dc-runtime && bun run build`.
+"use strict";
+(() => {
+  var __defProp = Object.defineProperty;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+
+  // src/react.ts
+  function getReact() {
+    const R = window.React;
+    if (!R) throw new Error("dc-runtime: window.React is not available yet");
+    return R;
+  }
+  function getReactDOM() {
+    const RD = window.ReactDOM;
+    if (!RD) throw new Error("dc-runtime: window.ReactDOM is not available yet");
+    return RD;
+  }
+  var h = ((...args) => getReact().createElement(
+    ...args
+  ));
+
+  // src/parse.ts
+  function parseDcDocument(doc) {
+    const dc = doc.querySelector("x-dc");
+    if (!dc) return null;
+    const scriptEl = doc.querySelector("script[data-dc-script]");
+    const { props, preview } = parseDataProps(
+      scriptEl?.getAttribute("data-props") ?? null
+    );
+    return {
+      template: dc.innerHTML,
+      js: scriptEl ? scriptEl.textContent || "" : "",
+      props,
+      preview
+    };
+  }
+  function parseDcText(src) {
+    const openMatch = /<x-dc(?:\s[^>]*)?>/.exec(src);
+    if (!openMatch) return null;
+    const close = src.lastIndexOf("</x-dc>");
+    if (close === -1 || close < openMatch.index) return null;
+    const template = src.slice(openMatch.index + openMatch[0].length, close);
+    const doc = new DOMParser().parseFromString(src, "text/html");
+    const scriptEl = doc.querySelector("script[data-dc-script]");
+    const { props, preview } = parseDataProps(
+      scriptEl?.getAttribute("data-props") ?? null
+    );
+    return {
+      template,
+      js: scriptEl ? scriptEl.textContent || "" : "",
+      props,
+      preview
+    };
+  }
+  function parseDataProps(raw) {
+    if (!raw) return { props: null, preview: null };
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return { props: null, preview: null };
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { props: null, preview: null };
+    }
+    const obj = parsed;
+    const preview = obj.$preview && typeof obj.$preview === "object" ? obj.$preview : null;
+    const rest = {};
+    for (const k of Object.keys(obj)) {
+      if (k[0] !== "$") rest[k] = obj[k];
+    }
+    return { props: Object.keys(rest).length ? rest : null, preview };
+  }
+  function dcNameFromPath(pathname) {
+    let p = pathname || "";
+    try {
+      p = decodeURIComponent(p);
+    } catch {
+    }
+    const base = p.split("/").pop() || "Root";
+    return base.replace(/\.dc\.html$/, "").replace(/\.html?$/, "") || "Root";
+  }
+
+  // src/boot.ts
+  var BASE_CSS = `
+    .sc-placeholder{background:color-mix(in srgb,currentColor 8%,transparent);
+      border:1px solid color-mix(in srgb,currentColor 50%,transparent);
+      border-radius:2px;box-sizing:border-box;overflow:hidden}
+    @keyframes sc-shine{0%{background-position:100% 50%}100%{background-position:0% 50%}}
+    html.sc-dc-streaming .sc-placeholder,
+    html.sc-dc-streaming .sc-interp.sc-missing{position:relative;
+      background:color-mix(in srgb,currentColor 5%,transparent);
+      border-color:transparent}
+    html.sc-dc-streaming .sc-placeholder::before,
+    html.sc-dc-streaming .sc-interp.sc-missing::before{content:'';
+      position:absolute;inset:0;pointer-events:none;
+      background:linear-gradient(90deg,rgba(217,119,87,0) 25%,rgba(247,225,211,.95) 37%,rgba(217,119,87,0) 63%);
+      background-size:400% 100%;animation:sc-shine 1.4s ease infinite}
+    html.sc-dc-streaming .sc-placeholder:nth-child(n+9 of .sc-placeholder)::before,
+    html.sc-dc-streaming .sc-interp.sc-missing:nth-child(n+9 of .sc-interp.sc-missing)::before{animation:none;
+      background:color-mix(in srgb,currentColor 8%,transparent)}
+    .sc-placeholder-error{padding:4px 8px;font:11px/1.4 ui-monospace,monospace;
+      color:color-mix(in srgb,currentColor 70%,transparent);word-break:break-word}
+    .sc-interp.sc-missing{display:inline-block;width:2em;height:1em;overflow:hidden;
+      vertical-align:text-bottom;background:rgba(255,255,255,.3);border:1px solid rgba(0,0,0,.5);
+      border-radius:2px;box-sizing:border-box;color:transparent;
+      user-select:none}
+    .sc-interp.sc-unresolved{font-family:ui-monospace,monospace;font-size:.85em;
+      color:color-mix(in srgb,currentColor 50%,transparent);
+      background:color-mix(in srgb,currentColor 10%,transparent);border-radius:3px;
+      padding:0 3px}
+    .sc-host.sc-has-error{position:relative}
+    .sc-logic-error{position:absolute;top:8px;left:8px;z-index:2147483647;max-width:60ch;
+      padding:6px 10px;background:#b00020;color:#fff;font:12px/1.4 ui-monospace,monospace;
+      border-radius:4px;white-space:pre-wrap;pointer-events:none}
+    /* Mirrors PRINT_BASELINE_CSS in apps/web deck-stage-export.ts \u2014 keep both
+       in sync until dc-runtime regains a build step. */
+    @media print {
+      @page { margin: 0.5cm; }
+      figure, table { break-inside: avoid; }
+      #dc-root, #dc-root > .sc-host { height: auto; }
+      *, *::before, *::after {
+        print-color-adjust: exact; -webkit-print-color-adjust: exact;
+        backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+        animation-delay: -99s !important; animation-duration: .001s !important;
+        animation-iteration-count: 1 !important; animation-fill-mode: both !important;
+        animation-play-state: running !important; transition-duration: 0s !important;
+      }
+    }
+  `;
+  var FULL_PAGE_CSS = "html,body{height:100%;margin:0}#dc-root,#dc-root>.sc-host{height:100%}";
+  function rootNameForDocument(doc, loc) {
+    let bootPath = loc.pathname || "";
+    if (!/\.dc\.html?$/i.test(safeDecode(bootPath))) {
+      try {
+        bootPath = new URL(doc.baseURI || "/").pathname;
+      } catch {
+      }
+    }
+    return dcNameFromPath(bootPath);
+  }
+  function safeDecode(s) {
+    try {
+      return decodeURIComponent(s);
+    } catch {
+      return s;
+    }
+  }
+  function boot(runtime, doc = document) {
+    const parsed = parseDcDocument(doc);
+    if (!parsed) return null;
+    const React = getReact();
+    const rootName = rootNameForDocument(doc, location);
+    runtime.markFetched(rootName);
+    runtime.setRootName(rootName);
+    runtime.adoptParsed(rootName, parsed);
+    if (!window.__resources) {
+      fetch(location.href).then((res) => res.ok ? res.text() : "").then((t) => {
+        const raw = t ? parseDcText(t) : null;
+        if (raw?.template) runtime.updateHtml(rootName, raw.template);
+      }).catch(() => {
+      });
+    }
+    const dc = doc.querySelector("x-dc");
+    const hostEl = doc.createElement("div");
+    hostEl.id = "dc-root";
+    dc.replaceWith(hostEl);
+    if (!parsed.preview) {
+      const s = doc.createElement("style");
+      s.textContent = FULL_PAGE_CSS;
+      doc.head.appendChild(s);
+    }
+    const Root = runtime.getDC(rootName);
+    const entry = runtime.registry.get(rootName);
+    function StandaloneRoot() {
+      const [, setTick] = React.useState(0);
+      React.useEffect(() => {
+        const sub = () => setTick((n) => n + 1);
+        entry.subs.add(sub);
+        return () => {
+          entry.subs.delete(sub);
+        };
+      }, []);
+      const defaults = React.useMemo(() => {
+        const d = {};
+        for (const k in entry.propsMeta || {}) {
+          const v = entry.propsMeta?.[k]?.default;
+          if (v !== void 0) d[k] = v;
+        }
+        return d;
+      }, [entry.propsMeta]);
+      return h(Root, { ...defaults, ...entry.propOverrides || {} });
+    }
+    const ReactDOM = getReactDOM();
+    if (ReactDOM.createRoot)
+      ReactDOM.createRoot(hostEl).render(h(StandaloneRoot));
+    else ReactDOM.render(h(StandaloneRoot), hostEl);
+    return rootName;
+  }
+
+  // src/expr.ts
+  var IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*/;
+  var NUMBER_RE = /^-?\d+(\.\d+)?$/;
+  function resolve(vals, src) {
+    const expr = String(src).trim();
+    if (!expr) return void 0;
+    if (expr[0] === "(" && expr[expr.length - 1] === ")" && parensWrapWhole(expr)) {
+      return resolve(vals, expr.slice(1, -1));
+    }
+    const eq = findTopLevelEquality(expr);
+    if (eq) {
+      const lv = resolve(vals, expr.slice(0, eq.index));
+      const rv = resolve(vals, expr.slice(eq.index + eq.op.length));
+      switch (eq.op) {
+        case "===":
+          return lv === rv;
+        case "!==":
+          return lv !== rv;
+        case "==":
+          return lv == rv;
+        default:
+          return lv != rv;
+      }
+    }
+    if (expr[0] === "!") return !resolve(vals, expr.slice(1));
+    if (expr === "true") return true;
+    if (expr === "false") return false;
+    if (expr === "null") return null;
+    if (expr === "undefined") return void 0;
+    if (NUMBER_RE.test(expr)) return Number(expr);
+    if (expr.length >= 2 && (expr[0] === '"' || expr[0] === "'") && expr[expr.length - 1] === expr[0]) {
+      return expr.slice(1, -1);
+    }
+    return resolvePath(vals, expr);
+  }
+  function parensWrapWhole(expr) {
+    let depth = 0;
+    for (let i = 0; i < expr.length - 1; i++) {
+      if (expr[i] === "(") depth++;
+      else if (expr[i] === ")") {
+        depth--;
+        if (depth === 0) return false;
+      }
+    }
+    return true;
+  }
+  function findTopLevelEquality(expr) {
+    let depth = 0;
+    for (let i = 0; i < expr.length; i++) {
+      const c = expr[i];
+      if (c === "[" || c === "(") depth++;
+      else if (c === "]" || c === ")") depth--;
+      else if (depth === 0 && (c === "=" || c === "!") && expr[i + 1] === "=") {
+        if (i > 0 && (expr[i - 1] === "=" || expr[i - 1] === "!")) continue;
+        if (!expr.slice(0, i).trim()) continue;
+        const op = expr[i + 2] === "=" ? c + "==" : c + "=";
+        return { index: i, op };
+      }
+    }
+    return null;
+  }
+  function resolvePath(vals, expr) {
+    const head = expr.match(IDENT_RE);
+    if (!head) return void 0;
+    let cur = vals == null ? void 0 : vals[head[0]];
+    let i = head[0].length;
+    while (i < expr.length) {
+      if (expr[i] === ".") {
+        const m = expr.slice(i + 1).match(IDENT_RE) || expr.slice(i + 1).match(/^\d+/);
+        if (!m) return void 0;
+        cur = cur == null ? void 0 : cur[m[0]];
+        i += 1 + m[0].length;
+      } else if (expr[i] === "[") {
+        let depth = 1;
+        let j = i + 1;
+        while (j < expr.length && depth > 0) {
+          if (expr[j] === "[") depth++;
+          else if (expr[j] === "]") {
+            depth--;
+            if (depth === 0) break;
+          }
+          j++;
+        }
+        if (depth !== 0) return void 0;
+        const key = resolve(vals, expr.slice(i + 1, j));
+        cur = cur == null ? void 0 : cur[key];
+        i = j + 1;
+      } else {
+        return void 0;
+      }
+    }
+    return cur;
+  }
+
+  // src/encode.ts
+  var CAMEL_ATTR = "sc-camel-";
+  var INLINE_TEXT_TAGS = new Set(
+    "a abbr b bdi bdo br cite code del dfn em i ins kbd mark q s samp small span strike strong sub sup u var wbr".split(
+      " "
+    )
+  );
+  var RAW_WRAP = {
+    select: "sc-raw-select",
+    table: "sc-raw-table",
+    tbody: "sc-raw-tbody",
+    thead: "sc-raw-thead",
+    tfoot: "sc-raw-tfoot",
+    tr: "sc-raw-tr",
+    td: "sc-raw-td",
+    th: "sc-raw-th",
+    caption: "sc-raw-caption"
+  };
+  var RAW_UNWRAP = Object.fromEntries(
+    Object.entries(RAW_WRAP).map(([k, v]) => [v, k])
+  );
+  var EVENT_MAP = {
+    onclick: "onClick",
+    onchange: "onChange",
+    oninput: "onInput",
+    onsubmit: "onSubmit",
+    onkeydown: "onKeyDown",
+    onkeyup: "onKeyUp",
+    onkeypress: "onKeyPress",
+    onmousedown: "onMouseDown",
+    onmouseup: "onMouseUp",
+    onmouseenter: "onMouseEnter",
+    onmouseleave: "onMouseLeave",
+    onfocus: "onFocus",
+    onblur: "onBlur",
+    ondoubleclick: "onDoubleClick",
+    oncontextmenu: "onContextMenu",
+    onmousemove: "onMouseMove",
+    onmouseover: "onMouseOver",
+    onmouseout: "onMouseOut",
+    onpointerdown: "onPointerDown",
+    onpointerup: "onPointerUp",
+    onpointermove: "onPointerMove",
+    onpointerenter: "onPointerEnter",
+    onpointerleave: "onPointerLeave",
+    onpointercancel: "onPointerCancel",
+    onpointerover: "onPointerOver",
+    onpointerout: "onPointerOut",
+    ongotpointercapture: "onGotPointerCapture",
+    onlostpointercapture: "onLostPointerCapture",
+    ontouchstart: "onTouchStart",
+    ontouchend: "onTouchEnd",
+    ontouchmove: "onTouchMove",
+    ontouchcancel: "onTouchCancel",
+    ondragstart: "onDragStart",
+    ondragend: "onDragEnd",
+    ondragenter: "onDragEnter",
+    ondragleave: "onDragLeave",
+    ondragover: "onDragOver",
+    onanimationstart: "onAnimationStart",
+    onanimationend: "onAnimationEnd",
+    onanimationiteration: "onAnimationIteration",
+    ontransitionend: "onTransitionEnd"
+  };
+  var ATTRS = `(?:[^>"']|"[^"]*"|'[^']*')*`;
+  var IMPORT_SELF_CLOSE_RE = new RegExp(
+    "<(x-import|dc-import)(" + ATTRS + ")/>",
+    "gi"
+  );
+  var CAMEL_ATTR_RE = /(\s)([a-z]+[A-Z][A-Za-z0-9]*)(\s*=)/g;
+  function encodeCamelAttrs(html) {
+    return html.replace(
+      CAMEL_ATTR_RE,
+      (_, sp, name, eq) => sp + CAMEL_ATTR + name.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase()) + eq
+    );
+  }
+  function encodeCase(html) {
+    html = html.replace(
+      IMPORT_SELF_CLOSE_RE,
+      (_, t, a) => "<" + t + a + "></" + t + ">"
+    );
+    html = html.replace(/<helmet(\s|>)/gi, "<sc-helmet$1");
+    html = html.replace(/<\/helmet\s*>/gi, "</sc-helmet>");
+    html = encodeCamelAttrs(html);
+    for (const [real, alias] of Object.entries(RAW_WRAP)) {
+      html = html.replace(
+        new RegExp("(</?)" + real + "(?=[\\s>])", "gi"),
+        "$1" + alias
+      );
+    }
+    return html;
+  }
+  function kebabToCamel(s) {
+    return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  }
+  function cssToObj(css) {
+    const o = {};
+    for (const decl of css.split(";")) {
+      const i = decl.indexOf(":");
+      if (i < 0) continue;
+      const prop = decl.slice(0, i).trim();
+      o[prop.startsWith("--") ? prop : kebabToCamel(prop)] = decl.slice(i + 1).trim();
+    }
+    return o;
+  }
+  function compileAttr(raw) {
+    const whole = raw.match(/^\s*\{\{([\s\S]+?)\}\}\s*$/);
+    if (whole) {
+      const path = whole[1];
+      return (vals) => resolve(vals, path);
+    }
+    if (raw.includes("{{")) {
+      const parts = raw.split(/\{\{([\s\S]+?)\}\}/g);
+      return (vals) => parts.map((s, i) => i & 1 ? resolve(vals, s) ?? "" : s).join("");
+    }
+    return () => raw;
+  }
+
+  // src/compile.ts
+  function collectProps(node, kind, host) {
+    const propGetters = [];
+    const pseudoClasses = [];
+    let hintSize = null;
+    for (const { name, value } of [...node.attributes]) {
+      if (name === "sc-name" || name === "data-dc-tpl") continue;
+      let key = name;
+      if (key.startsWith(CAMEL_ATTR))
+        key = kebabToCamel(key.slice(CAMEL_ATTR.length));
+      if (key === "hint-size") {
+        hintSize = value;
+        continue;
+      }
+      if (key.startsWith("style-")) {
+        pseudoClasses.push(host.pseudoClass(key.slice(6), value));
+        continue;
+      }
+      if (kind !== "dom") {
+        if (key.includes("-") && !(kind === "x-import" && (key.startsWith("aria-") || key.startsWith("data-"))))
+          key = kebabToCamel(key);
+      } else {
+        if (key === "class") key = "className";
+        else if (key === "for") key = "htmlFor";
+        else if (key.startsWith("on"))
+          key = EVENT_MAP[key] || "on" + key[2].toUpperCase() + key.slice(3);
+      }
+      propGetters.push([key, compileAttr(value)]);
+    }
+    return { propGetters, pseudoClasses, hintSize };
+  }
+  var HOST_STYLE_PROPS = /* @__PURE__ */ new Set([
+    "position",
+    "left",
+    "right",
+    "top",
+    "bottom",
+    "inset",
+    "width",
+    "height",
+    "z-index",
+    "transform"
+  ]);
+  function hostPositionStyle(style) {
+    const all = typeof style === "string" ? cssToObj(style) : style != null && typeof style === "object" ? style : null;
+    if (!all) return void 0;
+    const out = {};
+    for (const [k, v] of Object.entries(all)) {
+      const kebab = k.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
+      if (HOST_STYLE_PROPS.has(kebab)) out[k] = v;
+    }
+    return Object.keys(out).length ? out : void 0;
+  }
+  function compileTemplate(html, host) {
+    const tpl = document.createElement("template");
+    //! nosemgrep: direct-inner-html-assignment
+    tpl.innerHTML = encodeCase(html);
+    let tplN = 0;
+    (function stamp(node) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        node.setAttribute("data-dc-tpl", String(tplN++));
+      }
+      for (const c of node.childNodes) stamp(c);
+    })(tpl.content);
+    const builders = walkChildren(tpl.content, host);
+    const render = ((vals, ctx) => builders.map((b, i) => b(vals || {}, ctx, i)));
+    render.__annotated = tpl.innerHTML;
+    return render;
+  }
+  function walkChildren(node, host) {
+    return [...node.childNodes].map((c) => walk(c, host)).filter((b) => b != null);
+  }
+  function walk(node, host) {
+    if (node.nodeType === Node.TEXT_NODE) return walkText(node);
+    if (node.nodeType !== Node.ELEMENT_NODE) return null;
+    const el = node;
+    const tag = el.tagName.toLowerCase();
+    if (tag === "sc-for") return walkFor(el, host);
+    if (tag === "sc-if") return walkIf(el, host);
+    if (tag === "x-import") return walkXImport(el, host);
+    if (tag === "sc-helmet") return host.helmet(el);
+    if (tag === "dc-import") return walkComponent(el, host);
+    return walkElement(el, host);
+  }
+  var warnedHoles = /* @__PURE__ */ new Set();
+  function warnUnresolved(ctx, what) {
+    const key = (ctx?.__name || "?") + "\0" + what;
+    if (warnedHoles.has(key)) return;
+    warnedHoles.add(key);
+    console.warn("[dc-runtime] " + (ctx?.__name || "template") + ": " + what);
+  }
+  function walkText(node) {
+    const txt = node.nodeValue ?? "";
+    if (!txt.includes("{{")) {
+      if (!txt.trim() && !txt.includes(" ")) return null;
+      return () => txt;
+    }
+    const parts = txt.split(/\{\{([\s\S]+?)\}\}/g);
+    return (vals, ctx, key) => h(
+      getReact().Fragment,
+      { key },
+      ...parts.map((p, i) => {
+        if (!(i & 1)) return p;
+        const v = resolve(vals, p);
+        if (v === void 0) {
+          if (!ctx?.__streamingNow) {
+            if (document.body?.hasAttribute("data-dc-editor-on")) {
+              return h(
+                "span",
+                { key: i, className: "sc-interp sc-unresolved" },
+                "{{ " + p.trim() + " }}"
+              );
+            }
+            warnUnresolved(
+              ctx,
+              "{{ " + p.trim() + " }} never resolved \u2014 rendered as empty"
+            );
+            return null;
+          }
+          return h(
+            "span",
+            { key: i, className: "sc-interp sc-missing" },
+            p.trim()
+          );
+        }
+        if (getReact().isValidElement(v) || Array.isArray(v)) {
+          return h(getReact().Fragment, { key: i }, v);
+        }
+        if (v === null || typeof v === "boolean") return null;
+        return h("span", { key: i, className: "sc-interp" }, String(v));
+      })
+    );
+  }
+  function walkFor(el, host) {
+    const listGet = compileAttr(el.getAttribute("list") || "");
+    const asName = el.getAttribute("as") || "item";
+    const hintN = parseInt(el.getAttribute("hint-placeholder-count") || "0", 10);
+    const kids = walkChildren(el, host);
+    const listSrc = el.getAttribute("list") || "";
+    return (vals, ctx, key) => {
+      let list = listGet(vals);
+      if (!Array.isArray(list)) {
+        if (!ctx?.__streamingNow) {
+          if (list !== void 0 && list !== null) {
+            warnUnresolved(
+              ctx,
+              'sc-for list="' + listSrc + '" is not an array (' + typeof list + ")"
+            );
+          }
+          list = [];
+        } else {
+          list = hintN > 0 ? Array(hintN).fill(void 0) : [];
+        }
+      }
+      return h(
+        getReact().Fragment,
+        { key },
+        list.map((item, i) => {
+          const sub = { ...vals, [asName]: item, $index: i };
+          return h(
+            getReact().Fragment,
+            { key: i },
+            kids.map((b, j) => b(sub, ctx, j))
+          );
+        })
+      );
+    };
+  }
+  function walkIf(el, host) {
+    const valGet = compileAttr(el.getAttribute("value") || "");
+    const hintRaw = el.getAttribute("hint-placeholder-val");
+    const hintGet = hintRaw != null ? compileAttr(hintRaw) : null;
+    const kids = walkChildren(el, host);
+    return (vals, ctx, key) => {
+      let v = valGet(vals);
+      if (v === void 0 && hintGet && ctx?.__streamingNow) v = hintGet(vals);
+      return v ? h(
+        getReact().Fragment,
+        { key },
+        kids.map((b, j) => b(vals, ctx, j))
+      ) : null;
+    };
+  }
+  function walkComponent(el, host) {
+    const name = el.getAttribute("name") || el.getAttribute("component") || "";
+    el.removeAttribute("name");
+    el.removeAttribute("component");
+    const tplId = el.getAttribute("data-dc-tpl");
+    const styleRaw = el.getAttribute("style");
+    el.removeAttribute("style");
+    const styleGet = styleRaw != null ? compileAttr(styleRaw) : null;
+    const { propGetters, hintSize } = collectProps(el, "dc-import", host);
+    const kids = walkChildren(el, host);
+    return (vals, ctx, key) => {
+      const props = {
+        key,
+        __hintSize: hintSize,
+        __tplId: tplId,
+        __hostStyle: styleGet ? hostPositionStyle(styleGet(vals)) : void 0
+      };
+      for (const [k, g] of propGetters) {
+        const v = g(vals);
+        if (k === "dcProps") {
+          if (v && typeof v === "object") Object.assign(props, v);
+          continue;
+        }
+        props[k] = v;
+      }
+      if (kids.length) props.children = kids.map((b, j) => b(vals, ctx, j));
+      return h(host.component(name), props);
+    };
+  }
+  function walkXImport(el, host) {
+    const globalNameGet = compileAttr(
+      el.getAttribute("component-from-global-scope") || ""
+    );
+    const exportNameGet = compileAttr(
+      el.getAttribute("component") || el.getAttribute("name") || ""
+    );
+    const fromRaw = el.getAttribute("from") || (el.getAttribute("component-from-global-scope") ? "" : el.getAttribute("src") || el.getAttribute("import") || "");
+    const urls = fromRaw.trim() ? fromRaw.trim().split(/\s+/) : [];
+    const url = urls.length ? urls[urls.length - 1] : "";
+    const kindOf = (u) => /\.(jsx|tsx)(\?|#|$)/i.test(u) ? "jsx" : "js";
+    const tplId = el.getAttribute("data-dc-tpl");
+    const styleRaw = el.getAttribute("style");
+    el.removeAttribute("style");
+    const styleGet = styleRaw != null ? compileAttr(styleRaw) : null;
+    const wrap = tplId != null || styleGet != null;
+    const { propGetters, hintSize } = collectProps(el, "x-import", host);
+    const hasContent = el.children.length > 0 || !!(el.textContent || "").trim();
+    const kids = hasContent ? walkChildren(el, host) : [];
+    const urlBindable = fromRaw.includes("{{");
+    if (urls.length && !urlBindable) {
+      let prev;
+      for (const u of urls) prev = host.loadExternal(kindOf(u), u, prev);
+    }
+    const evalName = (g, vals) => {
+      const v = g(vals);
+      const s = v == null ? "" : String(v);
+      return s.includes("{{") ? "" : s;
+    };
+    return (vals, ctx, key) => {
+      const globalName = evalName(globalNameGet, vals);
+      const name = globalName || evalName(exportNameGet, vals);
+      const C = !name || urlBindable ? null : globalName ? host.resolveExternalGlobal(url, globalName) : host.resolveExternal(url, name);
+      const hostStyle = styleGet ? hostPositionStyle(styleGet(vals)) : void 0;
+      const wrapper = wrap ? {
+        key,
+        className: "sc-host-x",
+        "data-dc-tpl": tplId,
+        style: hostStyle || { display: "contents" }
+      } : null;
+      if (!C) {
+        const error = urlBindable ? "x-import `from` cannot contain {{ \u2026 }} \u2014 module URLs are resolved at parse time; use a literal URL" : host.resolveExternalError(url, name);
+        const ph = host.placeholder({
+          key: wrapper ? void 0 : key,
+          name,
+          hintSize,
+          error
+        });
+        return wrapper ? h("div", wrapper, ph) : ph;
+      }
+      const props = wrapper ? {} : { key };
+      let unresolvedHole = false;
+      for (const [k, g] of propGetters) {
+        if (k === "component" || k === "componentFromGlobalScope" || k === "from") {
+          continue;
+        }
+        const v = g(vals);
+        if (v === void 0) unresolvedHole = true;
+        if (k === "dcProps") {
+          if (v && typeof v === "object") Object.assign(props, v);
+          continue;
+        }
+        props[k] = v;
+      }
+      if (unresolvedHole && ctx?.__htmlStreamingNow) {
+        const ph = host.placeholder({
+          key: wrapper ? void 0 : key,
+          name,
+          hintSize,
+          error: null
+        });
+        return wrapper ? h("div", wrapper, ph) : ph;
+      }
+      if (kids.length) props.children = kids.map((b, j) => b(vals, ctx, j));
+      return wrapper ? h("div", wrapper, h(C, props)) : h(C, props);
+    };
+  }
+  function contentKey(el) {
+    const clone = el.cloneNode(true);
+    for (const d of clone.querySelectorAll("*")) {
+      while (d.attributes.length) d.removeAttribute(d.attributes[0].name);
+    }
+    const s = clone.innerHTML;
+    let h2 = 5381;
+    for (let i = 0; i < s.length; i++) h2 = (h2 << 5) + h2 + s.charCodeAt(i) | 0;
+    return s.length + "." + (h2 >>> 0).toString(36);
+  }
+  var NEVER_CONTENT_KEYED = new Set(
+    "script style textarea option title select canvas iframe video audio".split(
+      " "
+    )
+  );
+  var NOT_INLINE_SELECTOR = ":not(" + [...INLINE_TEXT_TAGS].join(",") + ")";
+  function walkElement(el, host) {
+    const realTag = RAW_UNWRAP[el.localName] || el.localName;
+    const tplId = el.getAttribute("data-dc-tpl");
+    const inlineOnly = el.childNodes.length > 0 && !NEVER_CONTENT_KEYED.has(realTag) && el.querySelector(NOT_INLINE_SELECTOR) === null;
+    const keySuffix = inlineOnly ? "|" + contentKey(el) : "";
+    const { propGetters, pseudoClasses } = collectProps(el, "dom", host);
+    const kids = walkChildren(el, host);
+    return (vals, ctx, key) => {
+      const props = {
+        key: key + keySuffix,
+        "data-dc-tpl": tplId
+      };
+      for (const [k, g] of propGetters) {
+        let v = g(vals);
+        if (k === "style" && typeof v === "string") v = cssToObj(v);
+        if ((k === "value" || k === "checked") && v === void 0) {
+          v = k === "checked" ? false : "";
+        }
+        props[k] = v;
+      }
+      if (pseudoClasses.length) {
+        props.className = [props.className, ...pseudoClasses].filter(Boolean).join(" ");
+      }
+      return h(realTag, props, ...kids.map((b, j) => b(vals, ctx, j)));
+    };
+  }
+
+  // src/logic.ts
+  var StreamableLogic = class {
+    constructor(props) {
+      __publicField(this, "props");
+      __publicField(this, "state", {});
+      /** Back-pointer to the wrapper component, installed after construction. */
+      __publicField(this, "__host");
+      this.props = props || {};
+    }
+    setState(update, cb) {
+      this.__host && this.__host.__setLogicState(update, cb);
+    }
+    forceUpdate() {
+      this.__host && this.__host.forceUpdate();
+    }
+    componentDidMount() {
+    }
+    componentDidUpdate(_prevProps) {
+    }
+    componentWillUnmount() {
+    }
+    /** The flat object the template renders against (merged over props). */
+    renderVals() {
+      return {};
+    }
+  };
+  function evalDcLogic(src) {
+    //! nosemgrep: eval-and-function-constructor
+    const fn = new Function(
+      "DCLogic",
+      "StreamableLogic",
+      "React",
+      src + '\n;return (typeof Component!=="undefined"&&Component)||undefined;'
+    );
+    return fn(StreamableLogic, StreamableLogic, getReact());
+  }
+
+  // src/component.ts
+  function shallowEqual(a, b) {
+    if (!b) return false;
+    const ak = Object.keys(a).filter((k) => k !== "children");
+    const bk = Object.keys(b).filter((k) => k !== "children");
+    if (ak.length !== bk.length) return false;
+    for (const k of ak) if (a[k] !== b[k]) return false;
+    return true;
+  }
+  function Placeholder({
+    name,
+    hintSize,
+    streaming,
+    error
+  }) {
+    const [w, hgt] = (hintSize || "100%,60px").split(",");
+    return h(
+      "div",
+      {
+        className: "sc-placeholder" + (streaming ? " sc-streaming" : ""),
+        style: { width: w.trim(), height: hgt && hgt.trim() },
+        title: name
+      },
+      error ? h(
+        "div",
+        { className: "sc-placeholder-error" },
+        (name ? name + ": " : "") + error
+      ) : null
+    );
+  }
+  function hintToMin(hint) {
+    if (!hint) return void 0;
+    const [w, hgt] = hint.split(",");
+    return { minWidth: w.trim(), minHeight: hgt && hgt.trim() };
+  }
+  function createComponentFactory(registry, ensureFetched) {
+    const React = getReact();
+    const AncestorContext = React.createContext([]);
+    class StreamableComponent extends React.Component {
+      constructor(props) {
+        super(props);
+        __publicField(this, "__name");
+        __publicField(this, "__sub");
+        __publicField(this, "__needsDidMount", false);
+        /** Snapshot of the registry's streaming flags taken at render time —
+         *  builders read it off the RenderCtx (this) to pick placeholder vs
+         *  render-nothing for unresolved values. */
+        __publicField(this, "__streamingNow", false);
+        __publicField(this, "__htmlStreamingNow", false);
+        /** When a construct throws, remember the (class, registry.ver, props)
+         *  triple so render-time reconcile doesn't re-attempt it on every parent
+         *  re-render. A registry bump (new class, template, external module
+         *  resolving via bumpAll) changes `ver` and breaks the memo so an
+         *  env-dependent constructor can self-heal. */
+        __publicField(this, "__failedLogic", null);
+        __publicField(this, "__failedUserProps", null);
+        __publicField(this, "__failedVer", -1);
+        /** Per-instance constructor error — kept here (not on the registry entry)
+         *  so one instance's successful construct can't hide a sibling's failure,
+         *  and a construct can never wipe an eval error `updateJs` recorded on
+         *  `r.logicError`. */
+        __publicField(this, "__ctorError", null);
+        __publicField(this, "logic");
+        this.__name = props.__name;
+        this.state = { __v: 0, __err: null };
+        this.__sub = () => {
+          if (this.state.__err) this.setState({ __err: null });
+          this.forceUpdate();
+        };
+        this.__makeLogic(registry.get(this.__name).Logic, null);
+        ensureFetched(this.__name);
+      }
+      /** Error-boundary hook: a render crash anywhere in this DC's subtree
+       *  (its own template, an x-import'd component, a child DC without its
+       *  own deeper boundary) lands here instead of unmounting the page. */
+      static getDerivedStateFromError(e) {
+        return { __err: e instanceof Error && e.message ? e.message : String(e) };
+      }
+      componentDidCatch(e, info) {
+        console.error(
+          "[dc-runtime] render error in <" + this.__name + ">:",
+          e,
+          info?.componentStack || ""
+        );
+      }
+      /** Instantiate the logic class (or the no-op base) and adopt `prevState`
+       *  over its initial state — used both at mount and on hot-swap. */
+      __makeLogic(Logic, prevState) {
+        const L = Logic || StreamableLogic;
+        try {
+          this.logic = new L(this.__userProps());
+          this.__failedLogic = null;
+          this.__failedUserProps = null;
+          this.__ctorError = null;
+        } catch (e) {
+          console.error(e);
+          this.__failedLogic = Logic;
+          this.__failedUserProps = this.__userProps();
+          this.__failedVer = registry.get(this.__name).ver;
+          this.__ctorError = this.__name + ": " + (e instanceof Error && e.message ? e.message : String(e));
+          this.logic = new StreamableLogic(
+            this.__userProps()
+          );
+        }
+        this.logic.__host = this;
+        if (prevState)
+          this.logic.state = { ...this.logic.state || {}, ...prevState };
+      }
+      /** The props the author's logic + template see — internal __-prefixed
+       *  wiring stripped. */
+      __userProps() {
+        const { __name, __hintSize, __tplId, __hostStyle, ...rest } = this.props;
+        return rest;
+      }
+      __setLogicState(update, cb) {
+        const prev = this.logic.state;
+        const patch = typeof update === "function" ? update(prev) : update;
+        this.logic.state = { ...prev, ...patch };
+        this.setState((s) => ({ __v: s.__v + 1 }), cb);
+      }
+      /** Swap the logic instance when the registry's Logic class changed
+       *  (streaming completion, hot reload). State carries over; didMount
+       *  re-fires after the swap commits so refs exist. */
+      __reconcileLogic() {
+        const r = registry.get(this.__name);
+        const Next = r.Logic;
+        const Cur = this.logic.constructor;
+        if (Next === Cur || !Next && Cur === StreamableLogic || Next === this.__failedLogic && r.ver === this.__failedVer && shallowEqual(this.__userProps(), this.__failedUserProps)) {
+          return;
+        }
+        if (!this.__needsDidMount) {
+          try {
+            this.logic.componentWillUnmount();
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        this.__makeLogic(Next, this.logic.state);
+        this.__needsDidMount = true;
+      }
+      componentDidMount() {
+        registry.get(this.__name).subs.add(this.__sub);
+        try {
+          this.logic.componentDidMount();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      componentDidUpdate(prevProps) {
+        this.logic.props = this.__userProps();
+        if (this.__needsDidMount) {
+          if (this.state.__err || !registry.get(this.__name).tpl) return;
+          this.__needsDidMount = false;
+          try {
+            this.logic.componentDidMount();
+          } catch (e) {
+            console.error(e);
+          }
+        } else {
+          try {
+            this.logic.componentDidUpdate(prevProps);
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      }
+      componentWillUnmount() {
+        registry.get(this.__name).subs.delete(this.__sub);
+        if (!this.__needsDidMount) {
+          try {
+            this.logic.componentWillUnmount();
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      }
+      render() {
+        const r = registry.get(this.__name);
+        const cls = "sc-host" + (r.htmlStreaming ? " sc-streaming-html" : "") + (r.jsStreaming ? " sc-streaming-js" : "");
+        const hintStyle = r.htmlStreaming ? hintToMin(this.props.__hintSize) : void 0;
+        const hostStyle = this.props.__hostStyle || hintStyle ? { ...hintStyle || {}, ...this.props.__hostStyle || {} } : void 0;
+        const hostBase = {
+          className: cls,
+          style: hostStyle,
+          "data-sc-name": this.__name,
+          "data-dc-tpl": this.props.__tplId
+        };
+        const chain = Array.isArray(this.context) ? this.context : [];
+        if (chain.includes(this.__name)) {
+          const cycle = [
+            ...chain.slice(chain.indexOf(this.__name)),
+            this.__name
+          ].join(" \u2192 ");
+          return h(
+            "div",
+            { ...hostBase, className: cls + " sc-has-error" },
+            h(Placeholder, {
+              name: this.__name,
+              hintSize: this.props.__hintSize,
+              error: "circular import: " + cycle
+            })
+          );
+        }
+        if (this.state.__err) {
+          return h(
+            "div",
+            { ...hostBase, className: cls + " sc-has-error" },
+            h(
+              "div",
+              { className: "sc-logic-error", "data-omelette-chrome": "" },
+              this.__name + ": " + this.state.__err
+            ),
+            h(Placeholder, {
+              name: this.__name,
+              hintSize: this.props.__hintSize,
+              error: this.state.__err
+            })
+          );
+        }
+        this.__reconcileLogic();
+        if (!r.tpl) {
+          return h(
+            "div",
+            hostBase,
+            h(Placeholder, { name: this.__name, hintSize: this.props.__hintSize })
+          );
+        }
+        const userProps = this.__userProps();
+        this.logic.props = userProps;
+        let vals = userProps;
+        let renderErr = r.logicError || this.__ctorError;
+        try {
+          vals = { ...userProps, ...this.logic.renderVals() || {} };
+        } catch (e) {
+          console.error(e);
+          renderErr = this.__name + ".renderVals(): " + (e instanceof Error && e.message ? e.message : String(e));
+        }
+        this.__streamingNow = !!(r.htmlStreaming || r.jsStreaming);
+        this.__htmlStreamingNow = !!r.htmlStreaming;
+        return h(
+          "div",
+          { ...hostBase, className: cls + (renderErr ? " sc-has-error" : "") },
+          renderErr && h(
+            "div",
+            { className: "sc-logic-error", "data-omelette-chrome": "" },
+            renderErr
+          ),
+          h(
+            AncestorContext.Provider,
+            { value: [...chain, this.__name] },
+            r.tpl(vals, this)
+          )
+        );
+      }
+    }
+    __publicField(StreamableComponent, "contextType", AncestorContext);
+    const named = /* @__PURE__ */ new Map();
+    function getDC(name) {
+      const hit = named.get(name);
+      if (hit) return hit;
+      function Dispatcher(p) {
+        const [, setTick] = React.useState(0);
+        React.useEffect(() => {
+          const sub = () => setTick((n) => n + 1);
+          registry.get(name).subs.add(sub);
+          return () => {
+            registry.get(name).subs.delete(sub);
+          };
+        }, []);
+        ensureFetched(name);
+        return h(StreamableComponent, { ...p, __name: name });
+      }
+      Dispatcher.displayName = name;
+      named.set(name, Dispatcher);
+      return Dispatcher;
+    }
+    return {
+      getDC,
+      StreamableComponent
+    };
+  }
+
+  // src/bundled.ts
+  function bundledBlob(url) {
+    const blobs = window.__resourceBlobs;
+    const b = blobs ? blobs[url.split("#")[0]] : void 0;
+    return b instanceof Blob ? b : null;
+  }
+
+  // src/cdn.ts
+  var REACT_URL = "https://unpkg.com/react@18.3.1/umd/react.production.min.js";
+  var REACT_SRI = "sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z";
+  var REACT_DOM_URL = "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js";
+  var REACT_DOM_SRI = "sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1";
+  var BABEL_URL = "https://unpkg.com/@babel/standalone@7.29.0/babel.min.js";
+  var BABEL_SRI = "sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y";
+  function cdnScriptFor(url, sri) {
+    const res = window.__resources;
+    const v = res ? res[url] : void 0;
+    return typeof v === "string" && v ? { src: v } : { src: url, integrity: sri };
+  }
+
+  // src/external.ts
+  var isCustomElementName = (n) => !n.includes(".") && n.includes("-");
+  function isRenderableType(g) {
+    if (typeof g === "function") return !isElementClass(g);
+    return typeof g === "object" && g !== null && typeof g.$$typeof === "symbol";
+  }
+  function resolveDottedPath(root, name) {
+    let cur = root;
+    for (const seg of name.split(".")) {
+      if (cur == null) return void 0;
+      cur = cur[seg];
+    }
+    return cur;
+  }
+  var GLOBAL_POLL_INTERVAL_MS = 50;
+  var GLOBAL_POLL_TIMEOUT_MS = 3e4;
+  function createExternalModules(onResolved) {
+    const cache = /* @__PURE__ */ new Map();
+    let babelLoading = null;
+    const reportedMissing = /* @__PURE__ */ new Map();
+    const polling = /* @__PURE__ */ new Set();
+    function ensureBabel() {
+      if (window.Babel) return Promise.resolve();
+      if (babelLoading) return babelLoading;
+      const babel = cdnScriptFor(BABEL_URL, BABEL_SRI);
+      babelLoading = new Promise((res, rej) => {
+        const s = document.createElement("script");
+        s.src = babel.src;
+        if (babel.integrity) {
+          s.integrity = babel.integrity;
+          s.crossOrigin = "anonymous";
+        }
+        s.onload = () => res();
+        s.onerror = rej;
+        document.head.appendChild(s);
+      });
+      return babelLoading;
+    }
+    const pending = /* @__PURE__ */ new Map();
+    function load(kind, url, after) {
+      const existing = pending.get(url);
+      if (existing) return existing;
+      cache.set(url, null);
+      console.info("[dc-runtime] x-import: loading", url, "(" + kind + ")");
+      const ready = Promise.all([
+        kind === "jsx" ? ensureBabel() : Promise.resolve(),
+        after ?? Promise.resolve()
+      ]);
+      const p = ready.then(() => {
+        const pre = bundledBlob(url);
+        if (pre) return pre.text();
+        return fetch(url).then((r) => {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.text();
+        });
+      }).then((src) => {
+        const code = kind === "jsx" ? window.Babel.transform(src, {
+          filename: url,
+          presets: ["react", "typescript"]
+        }).code : src;
+        const module = { exports: {} };
+        const before = new Set(Object.keys(window));
+        //! nosemgrep: eval-and-function-constructor
+        new Function("React", "module", "exports", "require", code)(
+          getReact(),
+          module,
+          module.exports,
+          () => ({})
+        );
+        const globals = {};
+        for (const k of Object.keys(window)) {
+          if (!before.has(k) && typeof window[k] === "function") {
+            globals[k] = window[k];
+          }
+        }
+        cache.set(url, { mod: module.exports, globals });
+        console.info(
+          "[dc-runtime] x-import: loaded",
+          url,
+          "\u2014 exports:",
+          Object.keys(module.exports),
+          "window globals:",
+          Object.keys(globals)
+        );
+        onResolved();
+      }).catch((e) => {
+        cache.set(url, {
+          mod: {},
+          globals: {},
+          error: "failed to load: " + (e instanceof Error && e.message ? e.message : String(e))
+        });
+        console.error(
+          "[dc-runtime] x-import: FAILED to load",
+          url,
+          "(" + kind + ")",
+          e
+        );
+        onResolved();
+      });
+      pending.set(url, p);
+      return p;
+    }
+    function resolve2(url, name) {
+      const entry = cache.get(url);
+      if (!entry) return null;
+      const { mod, globals } = entry;
+      const C = mod && mod[name] || globals && globals[name] || typeof window !== "undefined" && window[name] || mod && mod.default;
+      if (typeof C === "function") return C;
+      const key = url + "\0" + name;
+      if (!reportedMissing.has(key)) {
+        reportedMissing.set(
+          key,
+          entry.error || 'no export named "' + name + '" (has: ' + Object.keys(mod).join(", ") + ")"
+        );
+        console.error(
+          "[dc-runtime] x-import: module",
+          url,
+          "loaded but has no component named",
+          JSON.stringify(name),
+          "\u2014 available exports:",
+          Object.keys(mod),
+          "window globals:",
+          Object.keys(globals),
+          ". The module must `module.exports = {" + name + "}` or set `window." + name + "`."
+        );
+      }
+      return null;
+    }
+    function waitForGlobal(name) {
+      if (polling.has(name)) return;
+      polling.add(name);
+      const started = Date.now();
+      const isCE = isCustomElementName(name);
+      const tick = () => {
+        const found = isCE ? customElements.get(name) : isRenderableType(resolveDottedPath(window, name));
+        if (found) {
+          polling.delete(name);
+          onResolved();
+          return;
+        }
+        if (Date.now() - started >= GLOBAL_POLL_TIMEOUT_MS) {
+          console.warn(
+            "[dc-runtime] x-import: global",
+            JSON.stringify(name),
+            "never appeared on window after " + GLOBAL_POLL_TIMEOUT_MS + "ms"
+          );
+          return;
+        }
+        setTimeout(tick, GLOBAL_POLL_INTERVAL_MS);
+      };
+      setTimeout(tick, GLOBAL_POLL_INTERVAL_MS);
+    }
+    function resolveGlobal(url, name) {
+      const isCE = isCustomElementName(name);
+      if (!url) {
+        if (isCE) {
+          if (customElements.get(name)) return name;
+          waitForGlobal(name);
+          return null;
+        }
+        const g2 = resolveDottedPath(window, name);
+        if (isRenderableType(g2)) return g2;
+        waitForGlobal(name);
+        return null;
+      }
+      const entry = cache.get(url);
+      if (!entry) return null;
+      if (isCE && customElements.get(name)) return name;
+      const g = entry.globals[name] ?? resolveDottedPath(window, name);
+      if (isRenderableType(g)) return g;
+      if (name.includes(".")) return null;
+      const key = url + "\0global\0" + name;
+      if (!reportedMissing.has(key)) {
+        reportedMissing.set(key, null);
+        if (isCE && !customElements.get(name)) {
+          console.warn(
+            "[dc-runtime] x-import:",
+            url,
+            "loaded but no custom element",
+            JSON.stringify(name),
+            "is registered and window." + name + " is not a function \u2014 rendering <" + name + "> as an unknown element."
+          );
+        }
+      }
+      return name;
+    }
+    function getError(url, name) {
+      const entry = cache.get(url);
+      if (entry?.error) return entry.error;
+      return reportedMissing.get(url + "\0" + name) || null;
+    }
+    return { load, resolve: resolve2, resolveGlobal, getError };
+  }
+  function isElementClass(g) {
+    try {
+      return typeof g === "function" && typeof HTMLElement !== "undefined" && g.prototype instanceof HTMLElement;
+    } catch {
+      return false;
+    }
+  }
+
+  // src/atomics.ts
+  var ATOMIC_CSS = (
+    // layout
+    ".fx{display:flex}.col{display:flex;flex-direction:column}.grid{display:grid}.ac{align-items:center}.jc{justify-content:center}.jb{justify-content:space-between}.f1{flex:1}.noshrink{flex-shrink:0}.wrap{flex-wrap:wrap}.fw5{font-weight:500}.fw6{font-weight:600}.fw7{font-weight:700}.fw8{font-weight:800}.fs11{font-size:11px}.fs12{font-size:12px}.fs13{font-size:13px}.fs14{font-size:14px}.fs15{font-size:15px}.fs16{font-size:16px}.fs20{font-size:20px}.fs22{font-size:22px}.upper{text-transform:uppercase}.tc{text-align:center}.nowrap{white-space:nowrap}.gap8{gap:8px}.gap10{gap:10px}.gap12{gap:12px}.gap16{gap:16px}.gap24{gap:24px}.m0{margin:0}.mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}.mb8{margin-bottom:8px}.mb12{margin-bottom:12px}.mb16{margin-bottom:16px}.posrel{position:relative}.posabs{position:absolute}.round{border-radius:50%}.ohide{overflow:hidden}.bbox{box-sizing:border-box}.pointer{cursor:pointer}.w100{width:100%}.b0{border:none}"
+  );
+
+  // src/helmet.ts
+  var DESIGN_DOC_MODE_RE = /<meta\b[^>]*\bname\s*=\s*["']design_doc_mode["'][^>]*\b(?:content|value)\s*=\s*["'](\w+)["']/i;
+  var CANVAS_BG_LIGHT = "#f0eee6";
+  var CANVAS_BG_DARK = "#2e2c26";
+  function createHelmetManager(doc, isStreaming) {
+    const mounted = /* @__PURE__ */ new Set();
+    const live = /* @__PURE__ */ new Map();
+    let designDocMode = null;
+    let canvasStyleEl = null;
+    let appTheme = "light";
+    try {
+      const ds = doc.documentElement.dataset.theme;
+      appTheme = ds === "dark" || ds === "light" ? ds : new URLSearchParams(doc.defaultView?.location.search ?? "").get(
+        "theme"
+      ) === "dark" ? "dark" : "light";
+    } catch {
+    }
+    function applyCanvasBg() {
+      if (!canvasStyleEl) return;
+      const bg = appTheme === "dark" ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
+      canvasStyleEl.textContent = `html,body{background:${bg}}#dc-root>.sc-host{position:relative}`;
+    }
+    function postDesignMode(mode) {
+      if (window.parent === window) return;
+      try {
+        window.parent.postMessage({ type: "__dc_design_mode", mode }, "*");
+      } catch {
+      }
+    }
+    function setDesignDocMode(mode) {
+      if (mode === designDocMode) return;
+      designDocMode = mode;
+      postDesignMode(mode);
+      if (mode === "canvas") {
+        doc.documentElement.setAttribute("data-dc-canvas", "");
+        canvasStyleEl = doc.createElement("style");
+        canvasStyleEl.setAttribute("data-dc-canvas", "");
+        applyCanvasBg();
+        doc.head.appendChild(canvasStyleEl);
+      } else {
+        doc.documentElement.removeAttribute("data-dc-canvas");
+        canvasStyleEl?.remove();
+        canvasStyleEl = null;
+      }
+    }
+    window.addEventListener("message", (e) => {
+      const type = e.data && e.data.type;
+      if (type === "__dc_theme") {
+        const t = e.data.theme;
+        if (t === "light" || t === "dark") {
+          appTheme = t;
+          applyCanvasBg();
+        }
+        return;
+      }
+      if (!designDocMode || type !== "__dc_probe") return;
+      postDesignMode(designDocMode);
+    });
+    function compile(node) {
+      const raw = [...node.children];
+      const helmetClosed = node.nextSibling != null || node.parentNode?.nextSibling != null;
+      if (node.hasAttribute("data-dc-atomics") && !mounted.has("__dc-atomics")) {
+        mounted.add("__dc-atomics");
+        const el = doc.createElement("style");
+        el.id = "__dc-atomics";
+        el.textContent = ATOMIC_CSS;
+        doc.head.appendChild(el);
+      }
+      return (_vals, ctx) => {
+        const name = ctx && ctx.__name || "";
+        const streaming = !!(name && isStreaming(name));
+        for (let i = 0; i < raw.length; i++) {
+          const child = raw[i];
+          const tag = child.tagName;
+          const mayBePartial = streaming && !helmetClosed && i === raw.length - 1;
+          if (tag === "SCRIPT") {
+            if (mayBePartial) continue;
+            const key = "SCRIPT|" + (child.getAttribute("src") || child.textContent || "");
+            if (mounted.has(key)) continue;
+            mounted.add(key);
+            const el = doc.createElement("script");
+            for (const { name: an, value } of [...child.attributes])
+              el.setAttribute(an, value);
+            if (child.textContent) el.textContent = child.textContent;
+            doc.head.appendChild(el);
+          } else if (tag === "LINK" || tag === "META") {
+            if (mayBePartial) continue;
+            const key = tag + "|" + (child.getAttribute("href") || child.getAttribute("src") || child.outerHTML);
+            if (mounted.has(key)) continue;
+            mounted.add(key);
+            if (tag === "LINK") {
+              const rel = (child.getAttribute("rel") || "").toLowerCase().split(/\s+/);
+              const href = (child.getAttribute("href") || "").trim();
+              const res = window.__resources;
+              const pre = res && rel.includes("stylesheet") && !rel.includes("alternate") ? res[href] : void 0;
+              const blob = typeof pre === "string" && pre ? bundledBlob(pre) : null;
+              if (blob) {
+                const el = doc.createElement("style");
+                if (child.hasAttribute("disabled")) {
+                  el.setAttribute("media", "not all");
+                } else if (child.getAttribute("media")) {
+                  el.setAttribute("media", child.getAttribute("media"));
+                }
+                if (child.getAttribute("title"))
+                  el.setAttribute("title", child.getAttribute("title"));
+                void blob.text().then((css) => {
+                  el.textContent = css;
+                });
+                doc.head.appendChild(el);
+                continue;
+              }
+            }
+            doc.head.appendChild(child.cloneNode(true));
+          } else {
+            const key = name + "|" + i;
+            let el = live.get(key);
+            if (!el || el.tagName !== tag) {
+              if (el) el.remove();
+              el = doc.createElement(tag.toLowerCase());
+              live.set(key, el);
+              doc.head.appendChild(el);
+            }
+            for (const { name: an, value } of [...child.attributes]) {
+              if (el.getAttribute(an) !== value) el.setAttribute(an, value);
+            }
+            if (el.textContent !== child.textContent)
+              el.textContent = child.textContent;
+          }
+        }
+        return null;
+      };
+    }
+    return { compile, setDesignDocMode };
+  }
+
+  // src/pseudo.ts
+  function scanUnquotedUrl(css, i) {
+    if (css[i] !== "u" && css[i] !== "U" || css.slice(i, i + 4).toLowerCase() !== "url(" || /[a-z0-9_-]/i.test(css[i - 1] ?? "")) {
+      return -1;
+    }
+    let j = i + 4;
+    while (j < css.length && /\s/.test(css[j])) j++;
+    if (css[j] === '"' || css[j] === "'") return -1;
+    while (j < css.length && css[j] !== ")") {
+      if (css[j] === "\\") j++;
+      j++;
+    }
+    return j < css.length ? j + 1 : css.length;
+  }
+  function stripComments(css) {
+    let out = "";
+    let quote = "";
+    for (let i = 0; i < css.length; i++) {
+      const c = css[i];
+      if (quote) {
+        if (c === "\\") {
+          out += c + (css[i + 1] ?? "");
+          i++;
+          continue;
+        }
+        if (c === quote) quote = "";
+        out += c;
+      } else if (c === "'" || c === '"') {
+        quote = c;
+        out += c;
+      } else if (c === "/" && css[i + 1] === "*") {
+        const end = css.indexOf("*/", i + 2);
+        i = end === -1 ? css.length : end + 1;
+        out += " ";
+      } else {
+        const end = scanUnquotedUrl(css, i);
+        if (end === -1) out += c;
+        else {
+          out += css.slice(i, end);
+          i = end - 1;
+        }
+      }
+    }
+    return out;
+  }
+  function importantify(css) {
+    css = stripComments(css);
+    const decls = [];
+    let start = 0;
+    let depth = 0;
+    let quote = "";
+    for (let i = 0; i < css.length; i++) {
+      const c = css[i];
+      if (quote) {
+        if (c === "\\") i++;
+        else if (c === quote) quote = "";
+      } else if (c === "'" || c === '"') quote = c;
+      else if (c === "(") depth++;
+      else if (c === ")") depth = Math.max(0, depth - 1);
+      else if (c === ";" && depth === 0) {
+        decls.push(css.slice(start, i));
+        start = i + 1;
+      } else {
+        const end = scanUnquotedUrl(css, i);
+        if (end !== -1) i = end - 1;
+      }
+    }
+    decls.push(css.slice(start));
+    return decls.map((d) => d.trim()).filter(Boolean).map((d) => /!\s*important$/i.test(d) ? d : d + " !important").join(";");
+  }
+  function createPseudoSheet(doc) {
+    let el = null;
+    const cache = /* @__PURE__ */ new Map();
+    let n = 0;
+    return (pseudo, css) => {
+      const k = pseudo + "|" + css;
+      const hit = cache.get(k);
+      if (hit) return hit;
+      if (!el) {
+        el = doc.createElement("style");
+        doc.head.appendChild(el);
+      }
+      const cls = "scp" + (n++).toString(36);
+      const isPseudoElement = pseudo === "before" || pseudo === "after";
+      const sel = isPseudoElement ? "." + cls + "::" + pseudo : "." + cls + ":" + pseudo;
+      el.sheet.insertRule(
+        sel + "{" + (isPseudoElement ? css : importantify(css)) + "}",
+        el.sheet.cssRules.length
+      );
+      cache.set(k, cls);
+      return cls;
+    };
+  }
+
+  // src/registry.ts
+  function createRegistry() {
+    const entries = /* @__PURE__ */ Object.create(null);
+    function get(name) {
+      return entries[name] || (entries[name] = {
+        html: "",
+        tpl: null,
+        Logic: null,
+        jsStreaming: false,
+        htmlStreaming: false,
+        ver: 0,
+        subs: /* @__PURE__ */ new Set(),
+        fetched: false
+      });
+    }
+    function bump(name) {
+      const r = get(name);
+      r.ver++;
+      for (const fn of r.subs) fn();
+    }
+    return {
+      entries,
+      get,
+      bump,
+      bumpAll() {
+        for (const n in entries) bump(n);
+      }
+    };
+  }
+
+  // src/runtime.ts
+  var COMPONENT_DIR = ".";
+  function createRuntime(doc = document) {
+    const registry = createRegistry();
+    const pseudoClass = createPseudoSheet(doc);
+    const helmet = createHelmetManager(
+      doc,
+      (name) => registry.get(name).htmlStreaming
+    );
+    const external = createExternalModules(() => registry.bumpAll());
+    const factory = createComponentFactory(registry, ensureFetched);
+    const host = {
+      component: (name) => factory.getDC(name),
+      placeholder: (props) => h(Placeholder, props),
+      helmet: (node) => helmet.compile(node),
+      loadExternal: (kind, url, after) => external.load(kind, url, after),
+      resolveExternal: (url, name) => external.resolve(url, name),
+      resolveExternalGlobal: (url, name) => external.resolveGlobal(url, name),
+      resolveExternalError: (url, name) => external.getError(url, name),
+      pseudoClass
+    };
+    function ensureFetched(name) {
+      const r = registry.get(name);
+      if (r.fetched) return;
+      r.fetched = true;
+      const url = COMPONENT_DIR + "/" + encodeURIComponent(name) + ".dc.html";
+      const res = window.__resources;
+      const pre = res ? res[url] : void 0;
+      const target = typeof pre === "string" && pre ? pre : url;
+      const blob = bundledBlob(target);
+      (blob ? blob.text() : fetch(target).then((res2) => {
+        if (!res2.ok) {
+          console.error(
+            '[dc-runtime] sibling fetch for "' + name + '" failed:',
+            url,
+            "returned",
+            res2.status,
+            "\u2014 the reference renders as an empty placeholder."
+          );
+          return "";
+        }
+        return res2.text();
+      })).then((t) => {
+        if (!t) return;
+        const parsed = parseDcText(t);
+        if (!parsed) {
+          console.error(
+            '[dc-runtime] sibling fetch for "' + name + '":',
+            url,
+            "has no <x-dc> block \u2014 not a Design Component."
+          );
+          return;
+        }
+        if (parsed.props) r.propsMeta = parsed.props;
+        if (parsed.preview) r.preview = parsed.preview;
+        if (parsed.template && !r.html) updateHtml(name, parsed.template);
+        if (parsed.js && !r.Logic) updateJs(name, parsed.js);
+      }).catch(
+        (e) => console.error(
+          '[dc-runtime] sibling fetch for "' + name + '" threw:',
+          url,
+          e
+        )
+      );
+    }
+    let rootName = null;
+    function updateHtml(name, html) {
+      const r = registry.get(name);
+      r.html = html;
+      if (name === rootName) {
+        const mode = DESIGN_DOC_MODE_RE.exec(html)?.[1] ?? null;
+        if (mode || !r.htmlStreaming) helmet.setDesignDocMode(mode);
+      }
+      try {
+        r.tpl = compileTemplate(html, host);
+      } catch (e) {
+        console.error("[dc-runtime] template compile FAILED for", name, e);
+      }
+      registry.bump(name);
+    }
+    function updateJs(name, src) {
+      const r = registry.get(name);
+      const seq = r.jsSeq = (r.jsSeq || 0) + 1;
+      try {
+        const Cls = evalDcLogic(src);
+        if (r.jsSeq !== seq) return;
+        if (typeof Cls !== "function") {
+          r.logicError = name + ".dc.html: <script data-dc-script> must define `class Component extends DCLogic`";
+        } else {
+          r.logicError = null;
+          r.Logic = Cls;
+        }
+      } catch (e) {
+        if (r.jsSeq !== seq) return;
+        console.error(
+          "[dc-runtime] logic class eval FAILED for",
+          name,
+          "\u2014 the template renders with props only.",
+          e
+        );
+        r.logicError = name + ": " + (e instanceof Error && e.message ? e.message : String(e));
+      }
+      registry.bump(name);
+    }
+    function setStreaming(name, kind, on) {
+      const r = registry.get(name);
+      if (kind === "html") r.htmlStreaming = !!on;
+      else r.jsStreaming = !!on;
+      let any = false;
+      for (const n in registry.entries) {
+        const e = registry.entries[n];
+        if (e && (e.htmlStreaming || e.jsStreaming)) {
+          any = true;
+          break;
+        }
+      }
+      doc.documentElement.classList.toggle("sc-dc-streaming", any);
+      registry.bump(name);
+    }
+    function dcUpdate(name, kind, content, streaming) {
+      if (streaming) registry.get(name).fetched = true;
+      if (kind === "html") {
+        setStreaming(name, "html", !!streaming);
+        updateHtml(name, content);
+      } else if (kind === "js") {
+        setStreaming(name, "js", !!streaming);
+        if (!streaming) updateJs(name, content);
+      } else if (kind === "props") {
+        const { props, preview } = parseDataProps(content);
+        const r = registry.get(name);
+        r.propsMeta = props ?? void 0;
+        r.preview = preview;
+        registry.bump(name);
+      }
+    }
+    function setProps(name, overrides) {
+      registry.get(name).propOverrides = overrides && typeof overrides === "object" ? { ...overrides } : null;
+      registry.bump(name);
+    }
+    function adoptParsed(name, parsed) {
+      if (!parsed) return;
+      const r = registry.get(name);
+      if (parsed.props) r.propsMeta = parsed.props;
+      if (parsed.preview) r.preview = parsed.preview;
+      if (parsed.template) updateHtml(name, parsed.template);
+      if (parsed.js) updateJs(name, parsed.js);
+    }
+    return {
+      registry,
+      getDC: factory.getDC,
+      updateHtml,
+      updateJs,
+      dcUpdate,
+      setProps,
+      adoptParsed,
+      setRootName: (name) => {
+        rootName = name;
+      },
+      markFetched: (name) => {
+        registry.get(name).fetched = true;
+      },
+      annotatedTemplate: (name) => {
+        const r = registry.get(name);
+        return r.tpl && r.tpl.__annotated || null;
+      },
+      templateSource: (name) => registry.get(name).html || null,
+      StreamableLogic
+    };
+  }
+
+  // src/stream-state.ts
+  function createStreamTracker(staleMs = 6e4, now = Date.now) {
+    const since = /* @__PURE__ */ new Map();
+    const liveOne = (n) => {
+      const t = since.get(n);
+      if (t === void 0) return false;
+      if (now() - t > staleMs) {
+        since.delete(n);
+        return false;
+      }
+      return true;
+    };
+    return {
+      push(name, streaming, viewportKey) {
+        if (viewportKey === "dc-model") return;
+        if (streaming) since.set(name, now());
+        else since.delete(name);
+      },
+      live(name) {
+        if (name !== void 0) return liveOne(name);
+        for (const n of [...since.keys()]) if (liveOne(n)) return true;
+        return false;
+      }
+    };
+  }
+
+  // src/index.ts
+  function hideRawTemplate() {
+    const s = document.createElement("style");
+    s.textContent = "x-dc{display:none!important}";
+    document.head.appendChild(s);
+  }
+  function loadScript(src, integrity) {
+    return new Promise((resolve2, reject) => {
+      //! nosemgrep: create-script-element
+      const s = document.createElement("script");
+      s.src = src;
+      if (integrity) {
+        s.integrity = integrity;
+        s.crossOrigin = "anonymous";
+      }
+      s.async = false;
+      s.onload = () => resolve2();
+      s.onerror = () => reject(new Error(`failed to load ${src}`));
+      document.head.appendChild(s);
+    });
+  }
+  function loadReactUmd() {
+    const w = window;
+    if (w.React && w.ReactDOM) return Promise.resolve();
+    const react = cdnScriptFor(REACT_URL, REACT_SRI);
+    const reactDom = cdnScriptFor(REACT_DOM_URL, REACT_DOM_SRI);
+    return Promise.all([
+      loadScript(react.src, react.integrity),
+      loadScript(reactDom.src, reactDom.integrity)
+    ]).then(() => void 0);
+  }
+  function init() {
+    const runtime = createRuntime(document);
+    let rootName = "Root";
+    const baseCss = document.createElement("style");
+    baseCss.textContent = BASE_CSS;
+    document.head.prepend(baseCss);
+    const notifyHost = () => {
+      if (window.parent === window) return;
+      const r = runtime.registry.entries[rootName];
+      try {
+        window.parent.postMessage(
+          {
+            type: "__dc_booted",
+            rootName,
+            propsMeta: r && r.propsMeta || null,
+            preview: r && r.preview || null
+          },
+          "*"
+        );
+      } catch {
+      }
+    };
+    const streams = createStreamTracker();
+    const api = {
+      __dcUpdate: (name, kind, content, streaming, viewportKey) => {
+        streams.push(name, streaming, viewportKey);
+        runtime.dcUpdate(name, kind, content, streaming);
+        if (name === rootName && !streaming && kind === "props") notifyHost();
+      },
+      __dcStreaming: (name) => streams.live(name),
+      __dcSetProps: (name, overrides) => runtime.setProps(name, overrides),
+      /** Name of the component currently mounted as the page root — DC tools
+       *  push their template-stream here when targeting "the open page". */
+      __dcRootName: () => rootName,
+      /** Editor bridge — the encoded, `data-dc-tpl`-annotated template source.
+       *  The host editor parses this into its own template DOM so it can map a
+       *  rendered node (carrying the same `data-dc-tpl`) back to the source
+       *  node that emitted it. Returns the encoded form (`sc-camel-*` attrs,
+       *  `<sc-raw-*>`/`<sc-helmet>` tags); the editor decodes on serialize. */
+      __dcAnnotatedTemplate: (name) => runtime.annotatedTemplate(name),
+      /** Editor bridge — the *original* (decoded) template source. */
+      __dcTemplateSource: (name) => runtime.templateSource(name),
+      __dcBoot: () => {
+        rootName = boot(runtime, document) ?? rootName;
+        notifyHost();
+      },
+      __dcRegistry: runtime.registry.entries,
+      getDC: (name) => runtime.getDC(name),
+      // `DCLogic` is the documented base class name; `StreamableLogic` is the
+      // implementation alias kept for any project that already references it.
+      DCLogic: runtime.StreamableLogic,
+      StreamableLogic: runtime.StreamableLogic
+    };
+    Object.assign(window, api);
+    window.__dcContentKeyed = true;
+    if (document.readyState !== "loading") api.__dcBoot();
+    else document.addEventListener("DOMContentLoaded", () => api.__dcBoot());
+  }
+  hideRawTemplate();
+  loadReactUmd().then(init).catch((err) => {
+    console.error("[dc] failed to load React or boot:", err);
+    throw err;
+  });
+})();
+
+</script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>Kit 2 Unidades BLESSY® — Suco Verde Natural em Pó | Blessy Vida Leve</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="Kit com 2 unidades BLESSY® — suco verde natural em pó, greens &amp; superfoods. Escolha 2 sabores: melancia, abacaxi com hortelã, limão, manga ou maracujá. Frete grátis acima de R$ 49,90 e entrega para todo o Brasil." />
+<meta property="og:type" content="product" />
+<meta property="og:title" content="Kit 2 Unidades BLESSY® — Suco Verde Natural em Pó" />
+<meta property="og:description" content="Monte seu kit com 2 unidades e escolha seus sabores favoritos. Prático, frutado e fácil de preparar." />
+<meta property="og:image" content="https://SEU-DOMINIO.com.br/og-image.jpg" />
+<meta property="og:site_name" content="Blessy Vida Leve" />
+<link rel="icon" href="logo-blessy.webp" />
+<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init','1028592796448984');
+fbq('track','PageView');
+fbq('track','ViewContent',{content_name:'Kit 2 Unidades BLESSY',content_type:'product',content_ids:['blessy-kit-2'],value:89.90,currency:'BRL'});
+</script>
+<noscript><img height="1" width="1" style="display:none" alt="" src="https://www.facebook.com/tr?id=1028592796448984&ev=PageView&noscript=1" /></noscript>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#eeffea;color:#1f3321;font-family:'Manrope',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden;text-wrap:pretty}
+a{color:#336633;text-decoration:none}
+a:hover{color:#1f3321}
+button{font-family:inherit;cursor:pointer}
+img{max-width:100%;display:block}
+input,select{font-family:inherit}
+@keyframes bvlFade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes bvlSlide{from{transform:translateX(100%)}to{transform:translateX(0)}}
+@keyframes bvlPop{0%{transform:scale(.9)}60%{transform:scale(1.05)}100%{transform:scale(1)}}
+@keyframes bvlBreath{0%,100%{box-shadow:0 0 0 0 rgba(51,102,51,.28)}70%{box-shadow:0 0 0 13px rgba(51,102,51,0)}}
+@keyframes bvlSpin{to{transform:rotate(360deg)}}
+[data-slide]{transition:opacity .45s ease}
+[data-slide="off"]{opacity:0}
+@media(max-width:1000px){[data-desk]{display:none!important}}
+@media(min-width:1001px){[data-mob]{display:none!important}}
+@media(max-width:720px){[data-fcol] [data-fitems]{display:none}[data-fcol][data-open="1"] [data-fitems]{display:grid}}
+@media(min-width:721px){[data-fchev]{display:none!important}}
+video::-webkit-media-controls-volume-control-container,video::-webkit-media-controls-mute-button,video::-webkit-media-controls-volume-slider{display:none!important}
+@media(max-width:1060px) and (min-width:641px){[data-nutrifoto]{display:none}}
+@media(max-width:640px){[data-mosaic]{grid-template-columns:repeat(2,1fr)!important}[data-mosaic]>div{grid-column:span 2!important;aspect-ratio:4/3!important}}
+[data-noscroll]{scrollbar-width:none;-ms-overflow-style:none}
+[data-noscroll]::-webkit-scrollbar{display:none;height:0}
+[data-flavwrap]{container-type:inline-size}
+[data-flavgrid]{display:grid;gap:9px;grid-template-columns:repeat(2,minmax(0,1fr))}
+@container (min-width:330px){[data-flavgrid]{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@container (min-width:520px){[data-flavgrid]{grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}}
+</style>
+</helmet>
+
+<svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true" focusable="false">
+  <symbol id="ic-truck" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5h10.5v9.5H2.5z"></path><path d="M13 10h3.8l3.2 3.2V16H13z"></path><circle cx="6.5" cy="18.2" r="1.8"></circle><circle cx="16.6" cy="18.2" r="1.8"></circle></symbol>
+  <symbol id="ic-lock" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10" width="15" height="10" rx="2.6"></rect><path d="M8 10V7.6a4 4 0 018 0V10"></path></symbol>
+  <symbol id="ic-leaf" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4C10.8 4 5 8.4 5 15.2c0 2.3 1.3 4.3 1.3 4.3"></path><path d="M6.3 19.5C8 12.4 12.8 8.6 20 4"></path></symbol>
+  <symbol id="ic-box" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.8l8-3.8 8 3.8V16l-8 4-8-4z"></path><path d="M4 7.8l8 3.9 8-3.9"></path><path d="M12 11.7V20"></path></symbol>
+  <symbol id="ic-card" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2.6"></rect><path d="M3 10.4h18"></path></symbol>
+  <symbol id="ic-clock" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"></circle><path d="M12 7.4V12l3.4 2"></path></symbol>
+  <symbol id="ic-cup" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.2 6.8h11.6L16.4 19.4H7.6z"></path><path d="M6.7 11h10.6"></path></symbol>
+  <symbol id="ic-fruit" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"></circle><path d="M12 3.6v16.8"></path><path d="M3.6 12h16.8"></path></symbol>
+  <symbol id="ic-shield" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.6l7 2.9v5.4c0 4-3 7.1-7 8.5-4-1.4-7-4.5-7-8.5V6.5z"></path></symbol>
+  <symbol id="ic-chat" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="11.5" rx="3"></rect><path d="M8.5 16.5v3.4l4.2-3.4"></path></symbol>
+  <symbol id="ic-refresh" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M19.2 12a7.2 7.2 0 11-2.6-5.6"></path><path d="M19.4 3.8v4.2h-4.2"></path></symbol>
+  <symbol id="ic-spark" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round"><path d="M12 4v16"></path><path d="M4.9 7.8l14.2 8.4"></path><path d="M19.1 7.8L4.9 16.2"></path></symbol>
+  <symbol id="ic-check" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.6l4.6 4.6L19 7.4"></path></symbol>
+  <symbol id="ic-tag" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12.6 3.6H20V11l-8.6 8.6a1.6 1.6 0 01-2.3 0l-5.7-5.7a1.6 1.6 0 010-2.3z"></path><circle cx="16.4" cy="7.2" r="1.3"></circle></symbol>
+</svg>
+
+<div style="background:#336633;color:#eeffea;font-size:13px;font-weight:600;letter-spacing:.01em">
+  <div data-desk="1" style="max-width:1180px;margin:0 auto;padding:10px 20px;display:flex;gap:26px;align-items:center;justify-content:space-between">
+    <span style="display:flex;align-items:center;gap:8px"><svg width="17" height="17" stroke="#fde79d" fill="none" viewBox="0 0 24 24"><use href="#ic-truck"></use></svg>Frete grátis acima de R$ 49,90</span>
+    <span style="display:flex;align-items:center;gap:8px"><svg width="17" height="17" stroke="#fde79d" fill="none" viewBox="0 0 24 24"><use href="#ic-lock"></use></svg>Compra 100% segura</span>
+    <span style="display:flex;align-items:center;gap:8px"><svg width="17" height="17" stroke="#fde79d" fill="none" viewBox="0 0 24 24"><use href="#ic-leaf"></use></svg>Praticidade para uma rotina mais leve</span>
+    <span style="display:flex;align-items:center;gap:8px"><svg width="17" height="17" stroke="#fde79d" fill="none" viewBox="0 0 24 24"><use href="#ic-box"></use></svg>Entrega para todo o Brasil</span>
+    <span style="display:flex;align-items:center;gap:8px"><svg width="17" height="17" stroke="#fde79d" fill="none" viewBox="0 0 24 24"><use href="#ic-card"></use></svg>Parcele em até 12x</span>
+  </div>
+  <div data-mob="1" style="padding:10px 16px;min-height:36px;display:flex;align-items:center;justify-content:center;gap:8px">
+    <svg width="16" height="16" stroke="#fde79d" fill="none" viewBox="0 0 24 24" style="flex:0 0 auto"><use href="{{ annIcon }}"></use></svg>
+    <span style="animation:bvlFade .5s ease">{{ annMsg }}</span>
+  </div>
+</div>
+
+<header style="position:sticky;top:0;z-index:90;background:#ffffff;box-shadow:0 2px 18px rgba(31,51,33,.07)">
+  <div data-desk="1" style="max-width:1180px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:28px">
+    <a href="#topo" style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;flex-shrink:0">
+      <img src="logo-blessy.webp" alt="Blessy" style="height:34px;width:auto;display:block" />
+    </a>
+    <nav style="display:flex;gap:20px;font-size:14px;font-weight:600;color:#1f3321;flex-wrap:wrap">
+      <a href="#topo">Início</a>
+      <a href="#beneficios">Benefícios</a>
+      <a href="#sabores">Sabores</a>
+      <a href="#preparo">Como usar</a>
+      <a href="#avaliacoes">Avaliações</a>
+      <a href="#faq">Perguntas frequentes</a>
+      <a href="#rastreio">Rastrear pedido</a>
+    </nav>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:16px">
+      <button onClick="{{ toggleSearch }}" aria-label="Buscar" style="background:none;border:none;padding:6px;display:flex">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#336633" stroke-width="1.7" stroke-linecap="round"><circle cx="9" cy="9" r="5.6"></circle><line x1="13" y1="13" x2="17.4" y2="17.4"></line></svg>
+      </button>
+      <button aria-label="Minha conta" style="background:none;border:none;padding:6px;display:flex">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#336633" stroke-width="1.7" stroke-linecap="round"><circle cx="10" cy="7" r="3.2"></circle><path d="M4 17.2c0-3.4 2.7-5.6 6-5.6s6 2.2 6 5.6"></path></svg>
+      </button>
+      <button onClick="{{ openCart }}" aria-label="Carrinho" style="background:none;border:none;padding:6px;display:flex;position:relative">
+        <svg width="21" height="21" viewBox="0 0 20 20" fill="none" stroke="#336633" stroke-width="1.7" stroke-linecap="round"><path d="M4.4 6.6h11.2l.9 11H3.5z"></path><path d="M7.4 6.6a2.6 2.6 0 015.2 0"></path></svg>
+        <span style="position:absolute;top:-2px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:#ffb237;color:#1f3321;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 4px">{{ cartCount }}</span>
+      </button>
+      <button onClick="{{ goSabores }}" style="background:#336633;color:#ffffff;border:none;border-radius:999px;padding:12px 22px;font-size:13.5px;font-weight:800;letter-spacing:.02em" style-hover="background:#1f3321">Comprar Blessy</button>
+    </div>
+  </div>
+  <div data-mob="1" style="padding:12px 16px;display:flex;align-items:center;gap:12px">
+    <button onClick="{{ toggleMenu }}" aria-label="Menu" style="background:none;border:none;padding:6px;display:flex;flex-direction:column;gap:4px;width:34px">
+      <span style="height:2px;background:#336633;border-radius:2px"></span>
+      <span style="height:2px;background:#336633;border-radius:2px"></span>
+      <span style="height:2px;background:#336633;border-radius:2px"></span>
+    </button>
+    <a href="#topo" style="margin:0 auto;display:flex;flex-direction:column;align-items:center;gap:3px">
+      <img src="logo-blessy.webp" alt="Blessy" style="height:28px;width:auto;display:block" />
+    </a>
+    <button onClick="{{ toggleSearch }}" aria-label="Buscar" style="background:none;border:none;padding:6px;display:flex">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#336633" stroke-width="1.7" stroke-linecap="round"><circle cx="9" cy="9" r="5.6"></circle><line x1="13" y1="13" x2="17.4" y2="17.4"></line></svg>
+    </button>
+    <button onClick="{{ openCart }}" aria-label="Carrinho" style="background:none;border:none;padding:6px;display:flex;position:relative">
+      <svg width="21" height="21" viewBox="0 0 20 20" fill="none" stroke="#336633" stroke-width="1.7" stroke-linecap="round"><path d="M4.4 6.6h11.2l.9 11H3.5z"></path><path d="M7.4 6.6a2.6 2.6 0 015.2 0"></path></svg>
+      <span style="position:absolute;top:-2px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:#ffb237;color:#1f3321;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 4px">{{ cartCount }}</span>
+    </button>
+  </div>
+  <sc-if value="{{ searchOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="border-top:1px solid #eeffea;background:#eeffea;padding:14px 20px">
+      <div style="max-width:1180px;margin:0 auto;display:flex;gap:10px">
+        <input type="search" placeholder="Buscar sabores, kits, informações..." style="flex:1;border:1px solid #cfe3cf;background:#ffffff;border-radius:999px;padding:13px 18px;font-size:14px;color:#1f3321;outline:none" />
+        <button style="background:#336633;color:#fff;border:none;border-radius:999px;padding:13px 22px;font-weight:700;font-size:14px">Buscar</button>
+      </div>
+    </div>
+  </sc-if>
+</header>
+
+<sc-if value="{{ menuOpen }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:120;background:rgba(31,51,33,.45);animation:bvlFade .2s ease" onClick="{{ toggleMenu }}">
+    <nav style="background:#ffffff;width:min(320px,86vw);height:100%;padding:24px 22px;display:flex;flex-direction:column;gap:4px;animation:bvlSlide .28s ease">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <img src="logo-blessy.webp" alt="Blessy" style="height:26px;width:auto;display:block" />
+        <button onClick="{{ toggleMenu }}" aria-label="Fechar" style="background:#eeffea;border:none;width:34px;height:34px;border-radius:50%;color:#336633;font-size:16px">✕</button>
+      </div>
+      <a href="#topo" onClick="{{ closeMenu }}" style="padding:13px 0;border-bottom:1px solid #eeffea;font-weight:600">Início</a>
+      <a href="#beneficios" onClick="{{ closeMenu }}" style="padding:13px 0;border-bottom:1px solid #eeffea;font-weight:600">Benefícios</a>
+      <a href="#sabores" onClick="{{ closeMenu }}" style="padding:13px 0;border-bottom:1px solid #eeffea;font-weight:600">Sabores</a>
+      <a href="#preparo" onClick="{{ closeMenu }}" style="padding:13px 0;border-bottom:1px solid #eeffea;font-weight:600">Como usar</a>
+      <a href="#avaliacoes" onClick="{{ closeMenu }}" style="padding:13px 0;border-bottom:1px solid #eeffea;font-weight:600">Avaliações</a>
+      <a href="#faq" onClick="{{ closeMenu }}" style="padding:13px 0;border-bottom:1px solid #eeffea;font-weight:600">Perguntas frequentes</a>
+      <a href="#rastreio" onClick="{{ closeMenu }}" style="padding:13px 0;border-bottom:1px solid #eeffea;font-weight:600">Rastrear pedido</a>
+      <button onClick="{{ goSabores }}" style="margin-top:18px;background:#336633;color:#fff;border:none;border-radius:999px;padding:15px;font-weight:800;font-size:14px">Comprar Blessy</button>
+      <p style="margin-top:auto;font-size:12px;color:#6c746c;line-height:1.6">Leveza, equilíbrio e bem-estar todos os dias.</p>
+    </nav>
+  </div>
+</sc-if>
+
+<main id="topo" style="background:#eeffea">
+  <div style="max-width:1180px;margin:0 auto;padding:26px 20px 44px;display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start">
+
+    <div style="flex:0.85 1 380px;min-width:290px;display:flex;flex-direction:column;gap:14px">
+      <div onMouseMove="{{ zoomMove }}" onMouseLeave="{{ zoomOut }}" onTouchStart="{{ touchStart }}" onTouchEnd="{{ touchEnd }}" style="position:relative;border-radius:28px;overflow:hidden;aspect-ratio:1/1;transition:background .5s ease;box-shadow:0 10px 40px rgba(31,51,33,.07);background:{{ galleryBg }}">
+        <sc-for list="{{ gallery }}" as="g" hint-placeholder-count="1">
+          <div data-slide="{{ g.on }}" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:{{ g.pad }}">
+            <div style="width:100%;height:100%;border-radius:20px;overflow:hidden;background:{{ g.plate }};display:flex;align-items:center;justify-content:center">
+              <img data-zoomimg="1" src="{{ g.src }}" alt="{{ g.alt }}" loading="lazy" style="width:100%;height:100%;object-fit:{{ g.fit }};object-position:center;transition:transform .35s ease" />
+            </div>
+          </div>
+        </sc-for>
+        <button onClick="{{ toggleFav }}" aria-label="Favoritar" style="position:absolute;top:16px;right:16px;width:42px;height:42px;border-radius:50%;border:none;background:rgba(255,255,255,.92);color:{{ favColor }};font-size:19px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(31,51,33,.12)">♥</button>
+        <span style="position:absolute;top:16px;left:16px;background:#fde79d;color:#1f3321;font-size:11px;font-weight:800;letter-spacing:.08em;padding:8px 13px;border-radius:999px">KIT COM 2 UNIDADES</span>
+        <button onClick="{{ prevImg }}" aria-label="Imagem anterior" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;border:none;background:rgba(255,255,255,.9);color:#336633;font-size:18px;box-shadow:0 4px 14px rgba(31,51,33,.12)">‹</button>
+        <button onClick="{{ nextImg }}" aria-label="Próxima imagem" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;border:none;background:rgba(255,255,255,.9);color:#336633;font-size:18px;box-shadow:0 4px 14px rgba(31,51,33,.12)">›</button>
+        <span style="position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:rgba(31,51,33,.72);color:#fff;font-size:11.5px;font-weight:700;padding:6px 12px;border-radius:999px">{{ galleryCounter }}</span>
+      </div>
+      <div data-noscroll="1" style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">
+        <sc-for list="{{ gallery }}" as="g" hint-placeholder-count="4">
+          <button onClick="{{ g.select }}" aria-label="{{ g.alt }}" style="flex:0 0 auto;width:74px;height:74px;border-radius:16px;overflow:hidden;padding:5px;border:2px solid {{ g.ring }};background:{{ g.bg }};transition:border-color .25s ease">
+            <img src="{{ g.src }}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:{{ g.fit }};border-radius:11px" />
+          </button>
+        </sc-for>
+      </div>
+      <p data-desk="1" style="margin:0;font-size:12px;color:#6c746c">Passe o cursor sobre a imagem para ampliar. No celular, arraste para trocar de foto.</p>
+    </div>
+
+    <div style="flex:1.25 1 520px;min-width:290px;display:flex;flex-direction:column;gap:18px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;letter-spacing:.1em;color:#336633">
+        <span style="width:8px;height:8px;border-radius:50%;background:#336633;display:inline-block"></span>
+        EM ESTOQUE • ENVIO RÁPIDO
+      </div>
+      <h1 style="margin:0;font-family:'DM Serif Display',Georgia,serif;font-size:clamp(30px,4.4vw,46px);line-height:1.1;color:#1f3321;font-weight:400">2 Unidades BLESSY® — Suco Verde Natural em Pó</h1>
+      <p style="margin:0;font-size:16px;line-height:1.65;color:#6c746c;max-width:52ch">Escolha seus sabores favoritos e deixe sua rotina mais prática, leve e saborosa.</p>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="color:#ffb237;font-size:17px;letter-spacing:2px">★★★★★</span>
+        <strong style="font-size:14.5px">{{ notaMedia }}</strong>
+        <span style="color:#6c746c;font-size:14px">| {{ totalAvaliacoesTexto }}</span>
+      </div>
+
+      <div style="background:#eeffea;border:1.5px solid #cfe6cf;border-radius:24px;padding:22px;display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;align-items:center;gap:9px">
+          <span style="width:26px;height:26px;border-radius:50%;background:#ffb237;color:#1f3321;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center">%</span>
+          <span style="font-size:12.5px;font-weight:800;letter-spacing:.1em;color:#336633">OFERTA ESPECIAL DO KIT</span>
+        </div>
+        <p style="margin:0;font-size:14.5px;line-height:1.6;color:#1f3321">Leve 2 unidades BLESSY® e escolha os sabores que mais combinam com você.</p>
+        <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
+          <span style="font-size:15px;color:#6c746c;text-decoration:line-through">De {{ precoDe }}</span>
+          <span style="font-family:'Outfit',system-ui,sans-serif;font-weight:600;letter-spacing:-.015em;font-size:clamp(34px,5vw,46px);line-height:1;color:#336633">{{ precoPor }}</span>
+        </div>
+        <span style="font-size:14px;color:#1f3321">ou {{ parcelamento }}</span>
+        <sc-if value="{{ temPix }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+            <span style="background:#336633;color:#fde79d;font-size:11px;font-weight:800;letter-spacing:.06em;padding:5px 10px;border-radius:999px">{{ pixDesconto }} NO PIX</span>
+            <span style="font-family:'Outfit',system-ui,sans-serif;font-weight:600;font-size:19px;color:#336633">{{ precoPix }}</span>
+            <span style="font-size:12.5px;color:#6c746c">à vista no Pix</span>
+          </div>
+        </sc-if>
+        <div style="display:flex;align-items:center;gap:9px;background:#ffe3a7;border-radius:14px;padding:11px 14px;font-size:13px;font-weight:700;color:#1f3321">
+          <svg width="18" height="18" stroke="#336633" fill="none" viewBox="0 0 24 24" style="flex:0 0 auto"><use href="#ic-tag"></use></svg> Economize comprando o kit com 2 unidades
+        </div>
+        <sc-if value="{{ timerAtivo }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:#6c746c">
+            <span style="background:#ffffff;border:1px solid #ffb237;color:#1f3321;font-weight:800;padding:7px 12px;border-radius:10px;font-variant-numeric:tabular-nums">{{ timerLabel }}</span>
+            Condição especial disponível por tempo limitado
+          </div>
+        </sc-if>
+      </div>
+
+      <div id="sabores" style="background:#ffffff;border-radius:24px;padding:22px;box-shadow:0 8px 30px rgba(31,51,33,.06);display:flex;flex-direction:column;gap:16px;scroll-margin-top:110px">
+        <div>
+          <h2 style="margin:0 0 6px;font-family:'DM Serif Display',Georgia,serif;font-size:24px;font-weight:400">Escolha os sabores do seu kit</h2>
+          <p style="margin:0;font-size:13.5px;line-height:1.6;color:#6c746c">Selecione exatamente 2 unidades. Você pode repetir o mesmo sabor ou combinar opções diferentes.</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;background:#eeffea;border-radius:14px;padding:12px 14px">
+          <div style="flex:1;height:7px;border-radius:99px;background:#d7ecd7;overflow:hidden">
+            <div style="height:100%;border-radius:99px;background:#336633;transition:width .35s ease;width:{{ progresso }}"></div>
+          </div>
+          <span style="font-size:12.5px;font-weight:800;color:#336633;white-space:nowrap">{{ contadorTexto }}</span>
+        </div>
+        <div data-flavwrap="1">
+          <div data-flavgrid="1">
+            <sc-for list="{{ flavors }}" as="f" hint-placeholder-count="5">
+              <div style="border-radius:18px;padding:9px;border:2px solid {{ f.ring }};background:{{ f.bg }};display:grid;grid-template-rows:auto 2.5em auto;gap:7px;transition:border-color .25s ease;animation:{{ f.anim }}">
+                <div style="position:relative;background:rgba(255,255,255,.5);border-radius:13px;padding:6px;display:flex;align-items:center;justify-content:center;aspect-ratio:1/1">
+                  <img src="{{ f.img }}" alt="{{ f.alt }}" loading="lazy" style="width:100%;height:100%;object-fit:contain;object-position:center" />
+                  <sc-if value="{{ f.isNew }}" hint-placeholder-val="{{ false }}">
+                    <span style="position:absolute;top:5px;left:5px;background:#ffb237;color:#1f3321;font-size:8.5px;font-weight:800;letter-spacing:.06em;padding:3px 6px;border-radius:999px">NOVO</span>
+                  </sc-if>
+                  <sc-if value="{{ f.checked }}" hint-placeholder-val="{{ false }}">
+                    <span style="position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;background:#336633;color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;animation:bvlPop .3s ease">✓</span>
+                  </sc-if>
+                </div>
+                <strong style="font-size:12.5px;line-height:1.25;display:flex;align-items:center;justify-content:center;text-align:center;color:#1f3321">{{ f.nome }}</strong>
+                <div style="display:flex;align-items:center;justify-content:space-between;background:#ffffff;border-radius:999px;padding:4px">
+                  <button onClick="{{ f.dec }}" aria-label="Remover uma unidade" style="width:26px;height:26px;flex:0 0 26px;border-radius:50%;border:1.5px solid #cfe0cf;background:#fff;color:#336633;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0">−</button>
+                  <span style="font-size:14px;font-weight:800;font-variant-numeric:tabular-nums">{{ f.qty }}</span>
+                  <button onClick="{{ f.inc }}" aria-label="Adicionar uma unidade" style="width:26px;height:26px;flex:0 0 26px;border-radius:50%;border:none;background:#336633;color:#fff;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0">+</button>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <sc-if value="{{ kitReady }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:9px;background:#eeffea;color:#336633;border-radius:14px;padding:12px 14px;font-size:13.5px;font-weight:800;animation:bvlFade .3s ease"><svg width="18" height="18" stroke="#336633" fill="none" viewBox="0 0 24 24" style="flex:0 0 auto"><use href="#ic-check"></use></svg> Seu kit está pronto! {{ kitResumo }}</div>
+        </sc-if>
+        <sc-if value="{{ kitIncompleto }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;align-items:center;gap:9px;background:#ffdad9;color:#7a3a38;border-radius:14px;padding:12px 14px;font-size:13.5px;font-weight:700">Selecione os 2 sabores para continuar.</div>
+        </sc-if>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:11px">
+        <sc-if value="{{ kitReady }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ comprar }}" style="width:100%;border:none;border-radius:18px;background:#336633;color:#ffffff;padding:20px;font-size:16px;font-weight:800;letter-spacing:.05em;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 10px 26px rgba(51,102,51,.28);animation:bvlBreath 2.6s ease infinite" style-hover="background:#1f3321">
+            <svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round"><path d="M4.4 6.6h11.2l.9 11H3.5z"></path><path d="M7.4 6.6a2.6 2.6 0 015.2 0"></path></svg>
+            COMPRAR AGORA
+          </button>
+        </sc-if>
+        <sc-if value="{{ kitIncompleto }}" hint-placeholder-val="{{ true }}">
+          <button disabled="{{ true }}" style="width:100%;border:none;border-radius:18px;background:#c3d4c3;color:#ffffff;padding:20px;font-size:16px;font-weight:800;letter-spacing:.05em;cursor:not-allowed">COMPRAR AGORA</button>
+        </sc-if>
+        <button onClick="{{ addCarrinho }}" style="width:100%;border:1.8px solid #336633;border-radius:18px;background:#ffffff;color:#336633;padding:19px;font-size:15px;font-weight:800;letter-spacing:.05em" style-hover="background:#eeffea">ADICIONAR AO CARRINHO</button>
+      </div>
+
+      <div data-noscroll="1" style="display:{{ storiesDisplay }};gap:16px;overflow-x:auto;padding:6px 2px 2px;justify-content:center">
+        <sc-for list="{{ stories }}" as="s" hint-placeholder-count="4">
+          <button onClick="{{ s.open }}" style="flex:0 0 auto;background:none;border:none;padding:0;display:flex;flex-direction:column;align-items:center;gap:8px;width:88px">
+            <span style="width:80px;height:80px;border-radius:50%;padding:3px;background:conic-gradient(from 210deg,#336633,#ffb237,#fde79d,#336633);display:flex;align-items:center;justify-content:center">
+              <span style="width:100%;height:100%;border-radius:50%;padding:2.5px;background:#ffffff;display:block">
+                <video src="{{ s.src }}" onError="{{ videoFalhou }}" muted="{{ true }}" defaultMuted="{{ true }}" autoPlay="{{ true }}" loop="{{ true }}" playsInline="{{ true }}" preload="auto" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block"></video>
+              </span>
+            </span>
+            <span style="font-size:12px;font-weight:700;color:#1f3321;line-height:1.3;text-align:center">{{ s.label }}</span>
+          </button>
+        </sc-for>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
+        <div style="background:#ffffff;border:1px solid #dcecda;border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:8px">
+          <svg width="22" height="22" stroke="#336633" fill="none" viewBox="0 0 24 24"><use href="#ic-truck"></use></svg>
+          <strong style="font-size:12.5px;color:#336633;line-height:1.35">Entrega para todo o Brasil</strong>
+        </div>
+        <div style="background:#ffffff;border:1px solid #dcecda;border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:8px">
+          <svg width="22" height="22" stroke="#336633" fill="none" viewBox="0 0 24 24"><use href="#ic-lock"></use></svg>
+          <strong style="font-size:12.5px;color:#336633;line-height:1.35">Pagamento protegido</strong>
+        </div>
+        <div style="background:#ffffff;border:1px solid #dcecda;border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:8px">
+          <svg width="22" height="22" stroke="#336633" fill="none" viewBox="0 0 24 24"><use href="#ic-leaf"></use></svg>
+          <strong style="font-size:12.5px;color:#336633;line-height:1.35">Prático para o dia a dia</strong>
+        </div>
+      </div>
+      <p style="margin:0;font-size:12px;color:#6c746c;text-align:center">Compra segura • Dados protegidos • Suporte ao cliente</p>
+      <p style="margin:0;background:#ffffff;border-radius:14px;padding:13px 15px;font-size:11.5px;line-height:1.6;color:#6c746c">Este produto não é medicamento. A experiência de consumo e os resultados podem variar. Consulte as informações presentes no rótulo.</p>
+    </div>
+  </div>
+</main>
+
+<section style="background:#ffe3a7">
+  <div style="max-width:1180px;margin:0 auto;padding:64px 20px;display:flex;flex-wrap:wrap;gap:44px;align-items:center">
+    <div style="flex:1 1 380px;min-width:280px">
+      <span style="font-size:12px;font-weight:800;letter-spacing:.14em;color:#336633">ROTINA LEVE</span>
+      <h2 style="margin:12px 0 16px;font-family:'DM Serif Display',Georgia,serif;font-size:clamp(28px,4vw,42px);line-height:1.12;font-weight:400">Mais praticidade para cuidar da sua rotina</h2>
+      <p style="margin:0;font-size:16px;line-height:1.75;color:#3d4d3d;max-width:56ch">BLESSY® combina greens e superfoods em pó com sabores frutados, oferecendo uma maneira prática de complementar uma rotina equilibrada. Escolha seus sabores, prepare em poucos segundos e aproveite onde estiver.</p>
+      <button onClick="{{ goSabores }}" style="margin-top:24px;background:#336633;color:#fff;border:none;border-radius:999px;padding:16px 30px;font-size:14px;font-weight:800;letter-spacing:.04em" style-hover="background:#1f3321">MONTAR MEU KIT</button>
+    </div>
+    <div style="flex:1 1 380px;min-width:280px">
+      <div style="border-radius:28px;overflow:hidden;aspect-ratio:4/5;background:#eeffea;box-shadow:0 16px 44px rgba(31,51,33,.12)">
+        <img src="lifestyle-mao.avif" alt="Pote BLESSY sabor maracujá sendo segurado na mão" loading="lazy" style="width:100%;height:100%;object-fit:cover" />
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="beneficios" style="background:#ffffff;scroll-margin-top:110px">
+  <div style="max-width:1180px;margin:0 auto;padding:70px 20px">
+    <div style="text-align:center;max-width:640px;margin:0 auto 40px">
+      <span style="font-size:12px;font-weight:800;letter-spacing:.14em;color:#336633">BENEFÍCIOS</span>
+      <h2 style="margin:12px 0 0;font-family:'DM Serif Display',Georgia,serif;font-size:clamp(28px,4vw,42px);line-height:1.14;font-weight:400">Feito para acompanhar o seu dia</h2>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">
+      <sc-for list="{{ beneficios }}" as="b" hint-placeholder-count="6">
+        <div style="border-radius:24px;padding:26px;background:{{ b.bg }};display:flex;flex-direction:column;gap:10px">
+          <span style="width:44px;height:44px;border-radius:14px;background:rgba(255,255,255,.75);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" stroke="#336633" fill="none" viewBox="0 0 24 24"><use href="{{ b.icon }}"></use></svg></span>
+          <strong style="font-size:17px;font-family:'DM Serif Display',Georgia,serif;font-weight:400">{{ b.titulo }}</strong>
+          <span style="font-size:14px;line-height:1.65;color:#3d4d3d">{{ b.texto }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</section>
+
+<section style="background:#336633;color:#ffffff">
+  <div style="max-width:1180px;margin:0 auto;padding:70px 20px;display:flex;flex-wrap:wrap;gap:48px;align-items:center">
+    <div style="flex:1 1 400px;min-width:280px">
+      <span style="font-size:12px;font-weight:800;letter-spacing:.14em;color:#fde79d">POR QUE ESCOLHER BLESSY?</span>
+      <h2 style="margin:14px 0 22px;font-family:'DM Serif Display',Georgia,serif;font-size:clamp(28px,4.2vw,44px);line-height:1.12;font-weight:400;color:#ffffff">Seu momento de leveza em poucos segundos</h2>
+      <div style="display:grid;gap:12px;max-width:520px">
+        <sc-for list="{{ porQue }}" as="p" hint-placeholder-count="6">
+          <div style="display:flex;align-items:center;gap:12px;font-size:15px;line-height:1.5">
+            <span style="width:24px;height:24px;flex:0 0 24px;border-radius:50%;background:#fde79d;color:#336633;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center">✓</span>
+            {{ p.texto }}
+          </div>
+        </sc-for>
+      </div>
+      <button onClick="{{ goSabores }}" style="margin-top:28px;background:#ffb237;color:#1f3321;border:none;border-radius:999px;padding:17px 32px;font-size:14px;font-weight:800;letter-spacing:.05em" style-hover="background:#fde79d">ESCOLHER MEUS SABORES</button>
+    </div>
+    <div style="flex:1 1 340px;min-width:280px">
+      <div style="border-radius:28px;overflow:hidden;aspect-ratio:3/4;background:#eeffea">
+        <img src="lifestyle-ceu.webp" alt="Duas unidades BLESSY seguradas ao ar livre" loading="lazy" style="width:100%;height:100%;object-fit:cover" />
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="preparo" style="background:#ffffff;scroll-margin-top:110px">
+  <div style="max-width:1180px;margin:0 auto;padding:70px 20px">
+    <div style="text-align:center;max-width:600px;margin:0 auto 40px">
+      <span style="font-size:12px;font-weight:800;letter-spacing:.14em;color:#336633">COMO PREPARAR</span>
+      <h2 style="margin:12px 0 0;font-family:'DM Serif Display',Georgia,serif;font-size:clamp(28px,4vw,42px);line-height:1.14;font-weight:400">Simples de preparar. Fácil de aproveitar.</h2>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px">
+      <sc-for list="{{ etapas }}" as="e" hint-placeholder-count="3">
+        <div style="background:#eeffea;border-radius:24px;padding:24px;display:flex;flex-direction:column;gap:14px">
+          <span style="width:46px;height:46px;border-radius:50%;background:#336633;color:#ffffff;font-family:'DM Serif Display',Georgia,serif;font-size:24px;display:flex;align-items:center;justify-content:center">{{ e.num }}</span>
+          <strong style="font-size:18px;font-family:'DM Serif Display',Georgia,serif;font-weight:400">{{ e.titulo }}</strong>
+          <span style="font-size:14px;line-height:1.65;color:#3d4d3d">{{ e.texto }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <p style="margin:26px 0 0;text-align:center;font-size:12.5px;color:#6c746c">Consulte sempre o modo de preparo e as recomendações presentes no rótulo do produto.</p>
+  </div>
+</section>
+
+<section style="background:#eeffea">
+  <div style="max-width:1180px;margin:0 auto;padding:70px 20px">
+    <div style="text-align:center;max-width:600px;margin:0 auto 40px">
+      <span style="font-size:12px;font-weight:800;letter-spacing:.14em;color:#336633">VITRINE DE SABORES</span>
+      <h2 style="margin:12px 0 0;font-family:'DM Serif Display',Georgia,serif;font-size:clamp(28px,4vw,42px);line-height:1.14;font-weight:400">Um sabor para cada momento</h2>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:18px">
+      <sc-for list="{{ flavors }}" as="f" hint-placeholder-count="4">
+        <div style="background:{{ f.bg }};border-radius:26px;padding:18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 8px 28px rgba(31,51,33,.06)">
+          <div style="background:rgba(255,255,255,.5);border-radius:18px;padding:14px;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center">
+            <img src="{{ f.img }}" alt="{{ f.alt }}" loading="lazy" style="width:100%;height:100%;object-fit:contain;object-position:center" />
+          </div>
+          <strong style="font-size:19px;font-family:'DM Serif Display',Georgia,serif;font-weight:400">{{ f.nome }}</strong>
+          <span style="font-size:13.5px;line-height:1.6;color:#3d4d3d;flex:1">{{ f.vitrine }}</span>
+          <button onClick="{{ f.addKit }}" style="border:1.6px solid #336633;background:#ffffff;color:#336633;border-radius:999px;padding:13px;font-size:13px;font-weight:800" style-hover="background:#336633;color:#ffffff">Adicionar ao kit</button>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</section>
+
+<section style="background:#ffffff">
+  <div style="max-width:1180px;margin:0 auto;padding:70px 20px">
+    <div style="max-width:620px;margin:0 auto 38px;text-align:center">
+      <span style="font-size:12px;font-weight:800;letter-spacing:.14em;color:#336633">NA PRÁTICA</span>
+      <h2 style="margin:12px 0 0;font-family:'DM Serif Display',Georgia,serif;font-size:clamp(28px,4vw,42px);line-height:1.14;font-weight:400">BLESSY® acompanha o seu ritmo</h2>
+    </div>
+    <div data-mosaic="1" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">
+      <sc-for list="{{ mosaico }}" as="m" hint-placeholder-count="7">
+        <div style="position:relative;border-radius:24px;overflow:hidden;background:#eeffea;min-width:0;grid-column:{{ m.span }};aspect-ratio:{{ m.ratio }}">
+          <img src="{{ m.src }}" alt="{{ m.alt }}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block" />
+          <span style="position:absolute;left:12px;bottom:12px;right:12px;background:rgba(255,255,255,.92);color:#1f3321;font-size:12.5px;font-weight:700;line-height:1.35;padding:9px 12px;border-radius:12px">{{ m.titulo }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</section>
+
+<section id="nutricional" style="background:#ffffff;scroll-margin-top:110px">
+  <div style="max-width:1180px;margin:0 auto;padding:70px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:30px;align-items:center">
+    <div>
+      <h2 style="margin:0 0 16px;font-family:'DM Serif Display',Georgia,serif;font-size:clamp(28px,3.8vw,40px);line-height:1.12;font-weight:400;color:#1f3321">o que tem em 1 scoop de blessy</h2>
+      <p style="margin:0 0 24px;font-size:15.5px;line-height:1.75;color:#3d4d3d;max-width:44ch"><strong style="color:#1f3321">36 super nutrientes</strong> bioativos que atuam juntos para: regular o intestino, reduzir o inchaço e equilibrar funções vitais do corpo feminino. Fórmula inteligente, absorção real.</p>
+      <button onClick="{{ goRotulo }}" style="background:#1f4a24;color:#ffffff;border:none;border-radius:14px;padding:17px 28px;font-size:14px;font-weight:800" style-hover="background:#153418">Ver todos os ingredientes</button>
+    </div>
+    <div style="border:1.5px solid #1f4a24;border-radius:8px;overflow:hidden">
+      <sc-for list="{{ nutriTabela }}" as="n" hint-placeholder-count="7">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 18px;border-bottom:1px solid #dfe9dc;background:{{ n.bg }}">
+          <span style="font-size:14.5px;font-weight:{{ n.peso }};color:#1f3321">{{ n.item }}</span>
+          <span style="font-size:14.5px;font-weight:{{ n.peso }};color:#1f4a24;text-align:right">{{ n.valor }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div data-nutrifoto="1" style="border-radius:22px;overflow:hidden;aspect-ratio:3/4;background:#eeffea;max-width:340px;width:100%;justify-self:center">
+      <img src="life-copo-verde.webp" alt="Cliente bebendo o suco verde BLESSY" loading="lazy" style="width:100%;height:100%;object-fit:cover" />
+    </div>
+  </div>
+  <div style="max-width:1180px;margin:0 auto;padding:0 20px 70px">
+    <div style="border-radius:26px;overflow:hidden;box-shadow:0 10px 34px rgba(31,51,33,.08)">
+      <img src="banner-fibras.webp" alt="BLESSY: 3,6g de fibras, zero açúcares, mais de 36 ativos e 100% natural" loading="lazy" style="width:100%;height:auto;display:block" />
+    </div>
+  </div>
+</section>
+
+<section id="rotulo" style="background:#eeffea;scroll-margin-top:110px">
+  <div style="max-width:900px;margin:0 auto;padding:70px 20px">
+    <div style="text-align:center;margin-bottom:34px">
+      <span style="font-size:12px;font-weight:800;letter-spacing:.14em;color:#336633">INFORMAÇÕES DO RÓTULO</span>
+      <h2 style="margin:12px 0 0;font-family:'DM Serif Display',Georgia,serif;font-size:clamp(26px,3.6vw,38px);line-height:1.16;font-weight:400">Ingredientes e informações</h2>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:22px">
+      <sc-for list="{{ ingChips }}" as="c" hint-placeholder-count="5">
+        <button onClick="{{ c.select }}" style="border:1.5px solid {{ c.ring }};background:{{ c.bg }};color:#1f3321;border-radius:999px;padding:10px 16px;font-size:13px;font-weight:700">{{ c.nome }}</button>
+      </sc-for>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <sc-for list="{{ infoItens }}" as="i" hint-placeholder-count="7">
+        <div style="background:#ffffff;border-radius:18px;overflow:hidden">
+          <button onClick="{{ i.toggle }}" style="width:100%;background:none;border:none;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;font-size:15px;font-weight:700;color:#1f3321">
+            {{ i.titulo }}
+            <span style="color:#336633;font-size:19px;flex:0 0 auto">{{ i.sinal }}</span>
+          </button>
+          <sc-if value="{{ i.open }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:0 20px 20px;font-size:14px;line-height:1.7;color:#3d4d3d;animation:bvlFade .22s ease">{{ i.texto }}</div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+    <p style="margin:22px 0 0;font-size:12.5px;line-height:1.7;color:#6c746c;text-align:center">A composição, os ingredientes e as informações nutricionais podem variar de acordo com o sabor. Consulte o rótulo de cada embalagem antes do consumo.</p>
+  </div>
+</section>
+
+<section style="background:#eeffea;border-top:1px solid #d9ecd9">
+  <div style="max-width:900px;margin:0 auto;padding:64px 20px">
+    <div style="text-align:center;margin-bottom:32px">
+      <h2 style="margin:0;font-family:'DM Serif Display',Georgia,serif;font-size:clamp(26px,3.6vw,38px);line-height:1.16;font-weight:400">Uma escolha prática para a sua rotina</h2>
+    </div>
+    <div style="background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 8px 28px rgba(31,51,33,.06)">
+      <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:0;background:#336633;color:#ffffff;font-size:12.5px;font-weight:800;letter-spacing:.05em">
+        <div style="padding:16px 18px">CARACTERÍSTICA</div>
+        <div style="padding:16px 12px;text-align:center">BLESSY®</div>
+        <div style="padding:16px 12px;text-align:center">BEBIDAS CONVENCIONAIS</div>
+      </div>
+      <sc-for list="{{ comparativo }}" as="c" hint-placeholder-count="5">
+        <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr;border-bottom:1px solid #eeffea;font-size:14px">
+          <div style="padding:16px 18px;font-weight:600">{{ c.item }}</div>
+          <div style="padding:16px 12px;text-align:center;color:#336633;font-weight:800;background:#f6fff4">{{ c.blessy }}</div>
+          <div style="padding:16px 12px;text-align:center;color:#6c746c">{{ c.outros }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</section>
+
+<section id="avaliacoes" style="background:#ffffff;scroll-margin-top:110px">
+  <div style="max-width:1180px;margin:0 auto;padding:70px 20px">
+    <div style="text-align:center;max-width:620px;margin:0 auto 38px">
+      <span style="font-size:12px;font-weight:800;letter-spacing:.14em;color:#336633">AVALIAÇÕES</span>
+      <h2 style="margin:12px 0 0;font-family:'DM Serif Display',Georgia,serif;font-size:clamp(28px,4vw,42px);line-height:1.14;font-weight:400">Quem experimenta, recomenda</h2>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:26px;background:#ffdad9;border-radius:26px;padding:26px;margin-bottom:26px;align-items:center">
+      <div style="flex:0 0 auto;text-align:center;min-width:150px">
+        <div style="font-family:'DM Serif Display',Georgia,serif;font-size:56px;line-height:1;color:#1f3321">{{ notaMedia }}</div>
+        <div style="color:#ffb237;font-size:19px;letter-spacing:2px;margin-top:6px">★★★★★</div>
+        <div style="font-size:12.5px;color:#7a3a38;margin-top:6px;font-weight:700">{{ totalAvaliacoesCurto }}</div>
+      </div>
+      <div style="flex:1 1 260px;display:flex;flex-direction:column;gap:7px;min-width:220px">
+        <sc-for list="{{ barras }}" as="b" hint-placeholder-count="5">
+          <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#5b4241">
+            <span style="width:34px;font-weight:700">{{ b.label }}</span>
+            <div style="flex:1;height:8px;border-radius:99px;background:rgba(255,255,255,.7);overflow:hidden">
+              <div style="height:100%;background:#ffb237;border-radius:99px;width:{{ b.pct }}"></div>
+            </div>
+            <span style="width:38px;text-align:right;font-weight:700">{{ b.pct }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px;align-items:center">
+      <sc-for list="{{ revChips }}" as="c" hint-placeholder-count="6">
+        <button onClick="{{ c.select }}" style="border:1.5px solid {{ c.ring }};background:{{ c.bg }};color:#1f3321;border-radius:999px;padding:10px 16px;font-size:12.5px;font-weight:700">{{ c.nome }}</button>
+      </sc-for>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+      <sc-for list="{{ reviewsVisiveis }}" as="r" hint-placeholder-count="6">
+        <div style="border:1px solid #eeffea;background:#f9fff7;border-radius:22px;padding:20px;display:flex;flex-direction:column;gap:11px">
+          <div style="display:flex;align-items:center;gap:11px">
+            <span style="width:38px;height:38px;border-radius:50%;background:{{ r.cor }};color:#1f3321;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center">{{ r.inicial }}</span>
+            <div>
+              <strong style="font-size:14px;display:block">{{ r.nome }}</strong>
+              <span style="font-size:11px;color:#6c746c">Compra verificada • {{ r.sabor }}</span>
+            </div>
+          </div>
+          <span style="color:#ffb237;font-size:14px;letter-spacing:1.5px">★★★★★</span>
+          <p style="margin:0;font-size:14px;line-height:1.7;color:#3d4d3d">{{ r.texto }}</p>
+        </div>
+      </sc-for>
+    </div>
+    <div style="text-align:center;margin-top:26px">
+      <button onClick="{{ toggleRevAll }}" style="border:1.6px solid #336633;background:#ffffff;color:#336633;border-radius:999px;padding:15px 30px;font-size:13.5px;font-weight:800" style-hover="background:#eeffea">{{ revBtnLabel }}</button>
+      <p style="margin:14px 0 0;font-size:11.5px;color:#6c746c">Avaliações demonstrativas. Substitua por avaliações reais e verificadas antes da publicação definitiva.</p>
+    </div>
+  </div>
+</section>
+
+<section id="faq" style="background:#eeffea;scroll-margin-top:110px">
+  <div style="max-width:860px;margin:0 auto;padding:70px 20px">
+    <div style="text-align:center;margin-bottom:34px">
+      <span style="font-size:12px;font-weight:800;letter-spacing:.14em;color:#336633">DÚVIDAS</span>
+      <h2 style="margin:12px 0 0;font-family:'DM Serif Display',Georgia,serif;font-size:clamp(28px,4vw,40px);line-height:1.14;font-weight:400">Perguntas frequentes</h2>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <sc-for list="{{ faqItens }}" as="q" hint-placeholder-count="9">
+        <div style="background:#ffffff;border-radius:18px;overflow:hidden">
+          <button onClick="{{ q.toggle }}" style="width:100%;background:none;border:none;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;font-size:15px;font-weight:700;color:#1f3321">
+            {{ q.pergunta }}
+            <span style="color:#336633;font-size:19px;flex:0 0 auto">{{ q.sinal }}</span>
+          </button>
+          <sc-if value="{{ q.open }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:0 20px 20px;font-size:14px;line-height:1.7;color:#3d4d3d;animation:bvlFade .22s ease">{{ q.resposta }}</div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</section>
+
+<section id="rastreio" style="background:#fde79d;scroll-margin-top:110px">
+  <div style="max-width:1180px;margin:0 auto;padding:70px 20px">
+    <div style="text-align:center;max-width:600px;margin:0 auto 38px">
+      <span style="font-size:12px;font-weight:800;letter-spacing:.14em;color:#336633">GARANTIA E SEGURANÇA</span>
+      <h2 style="margin:12px 0 0;font-family:'DM Serif Display',Georgia,serif;font-size:clamp(28px,4vw,42px);line-height:1.14;font-weight:400">Compre com tranquilidade</h2>
+    </div>
+    <div style="border-radius:26px;overflow:hidden;margin-bottom:20px;box-shadow:0 10px 30px rgba(31,51,33,.09)">
+      <img src="banner-garantia.webp" alt="Garantia de 30 dias: se você não estiver 100% apaixonada pelo produto, reembolsamos todo o valor" loading="lazy" style="width:100%;height:auto;display:block" />
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px">
+      <sc-for list="{{ garantias }}" as="g" hint-placeholder-count="6">
+        <div style="background:#ffffff;border-radius:22px;padding:22px;display:flex;flex-direction:column;gap:9px">
+          <span style="width:40px;height:40px;border-radius:12px;background:#eeffea;display:flex;align-items:center;justify-content:center"><svg width="21" height="21" stroke="#336633" fill="none" viewBox="0 0 24 24"><use href="{{ g.icon }}"></use></svg></span>
+          <strong style="font-size:15.5px">{{ g.titulo }}</strong>
+          <span style="font-size:13px;line-height:1.6;color:#6c746c">{{ g.texto }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</section>
+
+<section style="background:linear-gradient(160deg,#eeffea 0%,#fde79d 55%,#ffe3a7 100%)">
+  <div style="max-width:1180px;margin:0 auto;padding:78px 20px;text-align:center">
+    <h2 style="margin:0 auto 16px;max-width:22ch;font-family:'DM Serif Display',Georgia,serif;font-size:clamp(30px,5vw,50px);line-height:1.1;font-weight:400">Escolha seus sabores e deixe sua rotina mais leve</h2>
+    <p style="margin:0 auto 34px;max-width:58ch;font-size:16px;line-height:1.7;color:#3d4d3d">Monte agora o seu kit com duas unidades BLESSY® e descubra sabores frutados que combinam com diferentes momentos do seu dia.</p>
+    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:34px">
+      <sc-for list="{{ flavors }}" as="f" hint-placeholder-count="5">
+        <div style="width:clamp(120px,20vw,168px);background:#ffffff;border-radius:20px;padding:12px;box-shadow:0 10px 30px rgba(31,51,33,.1)">
+          <img src="{{ f.img }}" alt="{{ f.alt }}" loading="lazy" style="width:100%;aspect-ratio:1/1;object-fit:contain;object-position:center" />
+          <span style="display:block;font-size:12.5px;font-weight:700;margin-top:6px">{{ f.nome }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <button onClick="{{ goSabores }}" style="background:#336633;color:#ffffff;border:none;border-radius:999px;padding:19px 40px;font-size:15px;font-weight:800;letter-spacing:.05em;box-shadow:0 12px 30px rgba(51,102,51,.25)" style-hover="background:#1f3321">MONTAR MEU KIT</button>
+  </div>
+</section>
+
+<footer style="background:#336633;color:#eeffea">
+  <div style="max-width:1180px;margin:0 auto;padding:60px 20px 30px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:34px">
+    <div>
+      <div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-bottom:14px">
+        <img src="logo-blessy.webp" alt="Blessy" style="height:32px;width:auto;display:block;filter:brightness(0) invert(1)" />
+      </div>
+      <p style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#d8ecd6;max-width:34ch">Leveza, equilíbrio e bem-estar todos os dias.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:7px">
+        <span style="border:1px solid rgba(253,231,157,.45);border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;color:#fde79d">Pix</span>
+        <span style="border:1px solid rgba(253,231,157,.45);border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;color:#fde79d">Cartão até 12x</span>
+        <span style="border:1px solid rgba(253,231,157,.45);border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;color:#fde79d">Boleto</span>
+        <span style="border:1px solid rgba(253,231,157,.45);border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;color:#fde79d">Site seguro SSL</span>
+      </div>
+    </div>
+    <sc-for list="{{ footerCols }}" as="c" hint-placeholder-count="3">
+      <div data-fcol="1" data-open="{{ c.open }}">
+        <button onClick="{{ c.toggle }}" style="background:none;border:none;padding:0 0 14px;color:#fde79d;font-size:12px;font-weight:800;letter-spacing:.12em;display:flex;align-items:center;justify-content:space-between;width:100%;text-align:left">
+          {{ c.titulo }}
+          <span data-fchev="1" style="font-size:16px">{{ c.sinal }}</span>
+        </button>
+        <div data-fitems="1" style="display:grid;gap:11px;font-size:14px">
+          <sc-for list="{{ c.itens }}" as="l" hint-placeholder-count="5">
+            <a href="{{ l.href }}" style="color:#d8ecd6">{{ l.label }}</a>
+          </sc-for>
+        </div>
+      </div>
+    </sc-for>
+    <div>
+      <div style="color:#fde79d;font-size:12px;font-weight:800;letter-spacing:.12em;margin-bottom:14px">ATENDIMENTO</div>
+      <div style="display:grid;gap:9px;font-size:13.5px;color:#d8ecd6;line-height:1.6">
+        <a href="{{ whatsHref }}" target="_blank" rel="noopener" style="color:#d8ecd6">WhatsApp: {{ empresaTelefone }}</a>
+        <span>E-mail: {{ empresaEmail }}</span>
+        <span>{{ empresaHorario }}</span>
+      </div>
+    </div>
+  </div>
+  <div style="max-width:1180px;margin:0 auto;padding:22px 20px 34px;border-top:1px solid rgba(253,231,157,.22);font-size:11.5px;line-height:1.8;color:#bcd8ba">
+    <p style="margin:0 0 8px">{{ empresaRazao }} • CNPJ {{ empresaCnpj }} • {{ empresaEndereco }}</p>
+    <p style="margin:0 0 8px">Este produto não é medicamento e não substitui uma alimentação equilibrada. A experiência de consumo e os resultados podem variar. Consulte as informações presentes no rótulo. BLESSY® é marca do fabricante do produto.</p>
+    <p style="margin:0">© 2026 Blessy Vida Leve. Todos os direitos reservados.</p>
+  </div>
+</footer>
+
+<div style="position:fixed;left:0;right:0;bottom:0;z-index:80;background:#ffffff;box-shadow:0 -4px 22px rgba(31,51,33,.12)">
+  <div style="max-width:1180px;margin:0 auto;padding:11px 16px;display:flex;align-items:center;gap:14px">
+    <div data-desk="1" style="width:56px;height:56px;border-radius:14px;background:{{ galleryBg }};padding:5px;flex:0 0 auto">
+      <span style="width:100%;height:100%;display:block;background-position:center;background-repeat:no-repeat;background-size:contain;background-image:{{ barraImgCss }}"></span>
+    </div>
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;align-items:baseline;gap:8px">
+        <strong style="font-family:'Outfit',system-ui,sans-serif;font-weight:600;font-size:20px;color:#336633">{{ precoPor }}</strong>
+        <span style="font-size:12px;color:#6c746c;text-decoration:line-through">{{ precoDe }}</span>
+      </div>
+      <span style="font-size:11.5px;color:#6c746c;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ barraStatus }}</span>
+    </div>
+    <sc-if value="{{ kitReady }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ comprar }}" style="flex:0 0 auto;background:#336633;color:#fff;border:none;border-radius:14px;padding:16px 26px;font-size:14px;font-weight:800;letter-spacing:.03em" style-hover="background:#1f3321">COMPRAR AGORA</button>
+    </sc-if>
+    <sc-if value="{{ kitIncompleto }}" hint-placeholder-val="{{ true }}">
+      <button onClick="{{ goSabores }}" style="flex:0 0 auto;background:#ffb237;color:#1f3321;border:none;border-radius:14px;padding:16px 22px;font-size:14px;font-weight:800;letter-spacing:.03em">ESCOLHER SABORES</button>
+    </sc-if>
+  </div>
+</div>
+
+<a href="{{ whatsHref }}" onClick="{{ cliqueWhats }}" target="_blank" rel="noopener" aria-label="Falar no WhatsApp" style="position:fixed;right:16px;bottom:104px;z-index:81;width:56px;height:56px;border-radius:50%;background:#336633;color:#fde79d;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(31,51,33,.28);animation:bvlBreath 3.2s ease infinite;font-size:24px">✆</a>
+
+<sc-if value="{{ cartOpen }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:130;background:rgba(31,51,33,.45);display:flex;justify-content:flex-end;animation:bvlFade .2s ease" onClick="{{ closeCart }}">
+    <aside onClick="{{ stop }}" style="background:#ffffff;width:min(420px,94vw);height:100%;display:flex;flex-direction:column;animation:bvlSlide .28s ease">
+      <div style="padding:20px;border-bottom:1px solid #eeffea;display:flex;align-items:center;justify-content:space-between">
+        <strong style="font-family:'DM Serif Display',Georgia,serif;font-size:22px;font-weight:400">Seu carrinho</strong>
+        <button onClick="{{ closeCart }}" aria-label="Fechar" style="background:#eeffea;border:none;width:34px;height:34px;border-radius:50%;color:#336633;font-size:15px">✕</button>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px">
+        <sc-if value="{{ cartVazio }}" hint-placeholder-val="{{ true }}">
+          <div style="text-align:center;padding:40px 10px;color:#6c746c">
+            <p style="margin:0 0 18px;font-size:14.5px;line-height:1.7">Seu carrinho está vazio. Monte seu kit com 2 unidades para continuar.</p>
+            <button onClick="{{ goSaboresFromCart }}" style="background:#336633;color:#fff;border:none;border-radius:999px;padding:14px 24px;font-weight:800;font-size:13.5px">Escolher sabores</button>
+          </div>
+        </sc-if>
+        <sc-for list="{{ cartItens }}" as="c" hint-placeholder-count="0">
+          <div style="display:flex;gap:14px;border:1px solid #eeffea;border-radius:18px;padding:14px">
+            <div style="width:72px;height:72px;flex:0 0 auto;border-radius:12px;background:{{ c.bg }};padding:6px">
+              <img src="{{ c.img }}" alt="{{ c.alt }}" style="width:100%;height:100%;object-fit:contain" />
+            </div>
+            <div style="flex:1;min-width:0">
+              <strong style="font-size:14px;display:block;line-height:1.4">{{ c.titulo }}</strong>
+              <span style="font-size:12px;color:#6c746c;display:block;margin-top:3px">{{ c.sub }}</span>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px">
+                <div style="display:flex;align-items:center;gap:9px;border:1px solid #dceadc;border-radius:999px;padding:4px 8px">
+                  <button onClick="{{ c.dec }}" aria-label="Diminuir" style="background:none;border:none;color:#336633;font-size:15px;width:20px">−</button>
+                  <span style="font-size:13px;font-weight:800">{{ c.qtd }}</span>
+                  <button onClick="{{ c.inc }}" aria-label="Aumentar" style="background:none;border:none;color:#336633;font-size:15px;width:20px">+</button>
+                </div>
+                <strong style="font-size:14px;color:#336633">{{ c.total }}</strong>
+              </div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="border-top:1px solid #eeffea;padding:20px;display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;font-size:15px">
+          <span style="color:#6c746c">Subtotal</span>
+          <strong style="font-size:20px;color:#336633">{{ cartTotal }}</strong>
+        </div>
+        <span style="font-size:12px;color:#6c746c">Frete calculado no checkout • Frete grátis acima de R$ 49,90</span>
+        <button onClick="{{ comprar }}" style="background:#336633;color:#fff;border:none;border-radius:16px;padding:18px;font-size:15px;font-weight:800;letter-spacing:.04em">FINALIZAR COMPRA</button>
+      </div>
+    </aside>
+  </div>
+</sc-if>
+
+<sc-if value="{{ storyOpen }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ closeStory }}" style="position:fixed;inset:0;z-index:135;background:rgba(20,32,21,.9);display:flex;align-items:center;justify-content:center;padding:20px;animation:bvlFade .2s ease">
+    <div onClick="{{ stop }}" style="width:min(400px,92vw);display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;gap:5px">
+        <sc-for list="{{ storyBars }}" as="b" hint-placeholder-count="4">
+          <span style="flex:1;height:3px;border-radius:99px;background:{{ b.bg }}"></span>
+        </sc-for>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;color:#eeffea">
+        <strong style="font-size:14px;font-weight:700">{{ storyLabel }}</strong>
+        <button onClick="{{ closeStory }}" aria-label="Fechar" style="background:rgba(255,255,255,.16);border:none;color:#fff;width:32px;height:32px;border-radius:50%;font-size:14px">✕</button>
+      </div>
+      <div style="position:relative;border-radius:22px;overflow:hidden;background:#000;aspect-ratio:9/16;max-height:74vh">
+        <video src="{{ storySrc }}" controls="{{ true }}" controlsList="nodownload noremoteplayback" disablePictureInPicture="{{ true }}" autoPlay="{{ true }}" loop="{{ true }}" muted="{{ true }}" defaultMuted="{{ true }}" playsInline="{{ true }}" style="width:100%;height:100%;object-fit:cover;display:block"></video>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button onClick="{{ prevStory }}" style="flex:1;background:rgba(255,255,255,.14);color:#fff;border:none;border-radius:12px;padding:13px;font-size:13px;font-weight:700">‹ Anterior</button>
+        <button onClick="{{ nextStory }}" style="flex:1;background:rgba(255,255,255,.14);color:#fff;border:none;border-radius:12px;padding:13px;font-size:13px;font-weight:700">Próximo ›</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ loading }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:140;background:rgba(238,255,234,.82);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+    <span style="width:42px;height:42px;border-radius:50%;border:3px solid #cfe6cf;border-top-color:#336633;animation:bvlSpin .8s linear infinite;display:block"></span>
+    <span style="font-size:14px;font-weight:700;color:#336633">Preparando seu checkout...</span>
+  </div>
+</sc-if>
+
+<sc-if value="{{ temToast }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;left:50%;transform:translateX(-50%);bottom:172px;z-index:150;background:#1f3321;color:#eeffea;padding:14px 20px;border-radius:14px;font-size:13.5px;font-weight:600;box-shadow:0 10px 30px rgba(31,51,33,.3);animation:bvlFade .25s ease;max-width:min(420px,92vw);text-align:center;line-height:1.5">{{ toast }}</div>
+</sc-if>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  /* =========================================================
+     CONFIG — TUDO EDITÁVEL AQUI (preços, avaliações, contatos)
+     ========================================================= */
+  CFG = {
+    preco: {
+      de: 'R$ 179,80',
+      por: 'R$ 89,90',
+      valor: 89.90,                  // usado no carrinho
+      parcelamento: '12x de R$ 7,49',
+      pix: 'R$ 85,41',               // 5% de desconto no Pix — deixe '' para ocultar
+      pixDesconto: '5% OFF'
+    },
+    avaliacoes: {
+      media: '4,9',
+      total: 2000,
+      texto: 'Mais de 2.000 clientes satisfeitos',
+      curto: '2.000+ avaliações',
+      distribuicao: [['5★', '92%'], ['4★', '6%'], ['3★', '1%'], ['2★', '1%'], ['1★', '0%']]
+    },
+    cronometro: { ativo: true, minutos: 20 },   // ativo:false desativa o cronômetro
+    whatsapp: {
+      numero: '5511928033029',
+      msg: 'Olá! Gostaria de saber mais sobre o Kit com 2 unidades BLESSY® e os sabores disponíveis.'
+    },
+    empresa: {
+      razao: 'Blessy Vida Leve',
+      cnpj: '54.828.217/0001-13',
+      endereco: 'Avenida Odila Chaves Rodrigues, 1200 — Sala 05 Letra B, Parque Industrial Rm, CEP 13213-087, Jundiaí/SP',
+      telefone: '(11) 92803-3029',
+      email: 'contato@useblessy.com.br',
+      horario: '[Seg a sex, 9h às 18h]'
+    },
+    checkoutUrl: 'https://pagamento.useblessy.site/checkout?product=9d786ec0-8796-11f1-a1eb-46da4690ad53',
+    trocaPolitica: '[Descrever a política de troca real da loja.]',
+    // Informações do rótulo por sabor — preencher com o texto impresso na embalagem.
+    infoRotulo: { melancia: {}, abacaxi: {}, limao: {}, manga: {}, maracuja: {} }
+  };
+
+  FLAVORS = [
+    { id: 'melancia', nome: 'Melancia', emoji: '🍉', bg: '#ffdad9', desc: 'Leve, frutada e refrescante.', vitrine: 'Frutado e refrescante para deixar sua rotina mais saborosa.', img: 'pote-melancia.webp' },
+    { id: 'abacaxi', nome: 'Abacaxi com Hortelã', emoji: '🍍', bg: '#eeffea', desc: 'Tropical, equilibrado e refrescante.', vitrine: 'Uma combinação tropical com um toque refrescante.', img: 'pote-abacaxi-hortela.webp' },
+    { id: 'limao', nome: 'Limão', emoji: '🍋', bg: '#fde79d', desc: 'Cítrico, leve e marcante.', vitrine: 'Uma opção cítrica, leve e marcante.', img: 'pote-limao.webp' },
+    { id: 'manga', nome: 'Manga', emoji: '🥭', bg: '#ffe3a7', desc: 'Tropical, suave e saboroso.', vitrine: 'Um sabor tropical, suave e agradável.', img: 'pote-manga.webp' },
+    { id: 'maracuja', nome: 'Maracujá', emoji: '🌼', bg: '#ffe3a7', desc: 'Tropical, cítrico e aromático.', vitrine: 'O sabor mais novo da linha, tropical e aromático.', img: 'pote-maracuja.webp', novo: true }
+  ];
+
+  // Vídeos em destaque (formato stories) — troque os arquivos e os títulos livremente
+  STORIES = [
+    { src: 'video-1.mp4', label: 'É gostoso?' },
+    { src: 'video-2.mp4', label: '3 Motivos' },
+    { src: 'video-3.mp4', label: 'Como age?' },
+    { src: 'video-4.mp4', label: 'Benefícios' }
+  ];
+
+  ANUNCIOS = [
+    ['#ic-truck', 'Frete grátis acima de R$ 49,90'],
+    ['#ic-lock', 'Compra 100% segura'],
+    ['#ic-leaf', 'Praticidade para uma rotina mais leve'],
+    ['#ic-box', 'Entrega para todo o Brasil'],
+    ['#ic-card', 'Parcele em até 12x']
+  ];
+
+  INFO_ITENS = [
+    ['ingredientes', 'Ingredientes'],
+    ['nutricional', 'Informação nutricional'],
+    ['preparo', 'Modo de preparo'],
+    ['conservacao', 'Conservação'],
+    ['alergicos', 'Alérgicos'],
+    ['advertencias', 'Advertências'],
+    ['conteudo', 'Conteúdo da embalagem']
+  ];
+
+  REVIEWS = [
+    { nome: 'Mariana S.', sabor: 'Melancia', sid: 'melancia', texto: 'Gostei muito da praticidade. O sabor de melancia ficou entre os meus favoritos e é muito fácil de preparar.' },
+    { nome: 'Camila R.', sabor: 'Limão e Abacaxi com Hortelã', sid: 'limao', texto: 'Escolhi limão e abacaxi com hortelã. Gostei bastante dos dois sabores e da possibilidade de montar o meu próprio kit.' },
+    { nome: 'Juliana M.', sabor: 'Abacaxi com Hortelã', sid: 'abacaxi', texto: 'O kit com duas unidades foi ótimo para experimentar opções diferentes. A embalagem também chegou muito bem protegida.' },
+    { nome: 'Ana Paula C.', sabor: 'Manga', sid: 'manga', texto: 'Uso principalmente pela manhã. O preparo é rápido e o sabor de manga me surpreendeu.' },
+    { nome: 'Renata A.', sabor: 'Limão', sid: 'limao', texto: 'Levo para o trabalho e consigo preparar em poucos minutos. Comprarei novamente.' },
+    { nome: 'Fernanda L.', sabor: 'Melancia', sid: 'melancia', texto: 'A página é fácil de usar e consegui escolher dois sabores diferentes sem dificuldade.' },
+    { nome: 'Patrícia N.', sabor: 'Maracujá', sid: 'maracuja', texto: 'O sabor maracujá é bem aromático. Achei prático para levar na bolsa.' },
+    { nome: 'Bianca T.', sabor: 'Manga', sid: 'manga', texto: 'Combinei manga com melancia no kit. Chegou rápido e bem embalado.' },
+    { nome: 'Larissa P.', sabor: 'Abacaxi com Hortelã', sid: 'abacaxi', texto: 'Gosto do toque de hortelã. Preparo em uma coqueteleira antes de sair de casa.' },
+    { nome: 'Débora F.', sabor: 'Limão', sid: 'limao', texto: 'Simples de preparar e fácil de encaixar na correria do dia a dia.' },
+    { nome: 'Aline V.', sabor: 'Melancia', sid: 'melancia', texto: 'A embalagem é bonita e o pote rende bastante doses. Recomendo o kit para experimentar dois sabores.' },
+    { nome: 'Carla B.', sabor: 'Maracujá', sid: 'maracuja', texto: 'Experimentei o sabor novo e gostei. Atendimento respondeu rápido no WhatsApp.' }
+  ];
+
+  state = {
+    qty: {}, gi: 0, fav: false, menu: false, search: false, cart: false, cartQty: 1,
+    acc: null, faq: null, ing: 'melancia', rev: 'todos', revFotos: false, revAll: false,
+    left: 0, ann: 0, toast: '', loading: false, fcol: null, pop: null, added: false, story: null, videoErro: false
+  };
+
+  // Meta Pixel — eventos padrão + customizados
+  PIXEL_BASE = { content_type: 'product', content_ids: ['blessy-kit-2'], content_name: 'Kit 2 Unidades BLESSY', currency: 'BRL' };
+  track(evento, extra, custom) {
+    if (typeof window.fbq !== 'function') return;
+    window.fbq(custom ? 'trackCustom' : 'track', evento, Object.assign({}, this.PIXEL_BASE, extra || {}));
+  }
+
+  silenciarVideos = () => {
+    document.querySelectorAll('video').forEach(v => {
+      v.muted = true; v.defaultMuted = true; v.volume = 0;
+      v.setAttribute('muted', '');
+      if (!v._blsy) {
+        v._blsy = true;
+        ['play', 'playing', 'volumechange', 'loadeddata', 'canplay'].forEach(ev =>
+          v.addEventListener(ev, () => { v.muted = true; v.volume = 0; })
+        );
+      }
+    });
+  };
+
+  componentDidMount() {
+    this._scrollFn = () => {
+      const y = window.pageYOffset + window.innerHeight;
+      const h = document.body.scrollHeight;
+      if (!this._s50 && y > h * 0.5) { this._s50 = true; this.track('Scroll50', {}, true); }
+      if (!this._s90 && y > h * 0.9) { this._s90 = true; this.track('Scroll90', {}, true); }
+    };
+    window.addEventListener('scroll', this._scrollFn, { passive: true });
+    this._mute = setInterval(this.silenciarVideos, 500);
+    this._mo = new MutationObserver(this.silenciarVideos);
+    this._mo.observe(document.body, { childList: true, subtree: true });
+    this.silenciarVideos();
+    this._t = setInterval(() => this.setState(s => ({ left: s.left > 0 ? s.left - 1 : 0 })), 1000);
+    this._a = setInterval(() => this.setState(s => ({ ann: (s.ann + 1) % this.ANUNCIOS.length })), 3200);
+    if (this.CFG.cronometro.ativo) this.setState({ left: this.CFG.cronometro.minutos * 60 });
+  }
+  componentWillUnmount() { clearInterval(this._t); clearInterval(this._a); clearInterval(this._mute); if (this._mo) this._mo.disconnect(); window.removeEventListener('scroll', this._scrollFn); }
+
+  total() { return this.FLAVORS.reduce((n, f) => n + (this.state.qty[f.id] || 0), 0); }
+  fmt(n) { return 'R$ ' + n.toFixed(2).replace('.', ','); }
+  toast(msg) { this.setState({ toast: msg }); clearTimeout(this._tt); this._tt = setTimeout(() => this.setState({ toast: '' }), 3200); }
+
+  scrollTo(id, off) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    window.scrollTo({ top: el.getBoundingClientRect().top + window.pageYOffset - (off || 96), behavior: 'smooth' });
+  }
+
+  inc(f) {
+    if (this.total() >= 2) { this.toast('Este kit contém 2 unidades. Remova uma para trocar de sabor.'); return; }
+    const idx = this.FLAVORS.findIndex(x => x.id === f.id);
+    this.track('SelecionouSabor', { sabor: f.nome }, true);
+    this.setState(s => ({ qty: Object.assign({}, s.qty, { [f.id]: (s.qty[f.id] || 0) + 1 }), gi: 1 + idx, pop: f.id }));
+    setTimeout(() => this.setState({ pop: null }), 360);
+  }
+  dec(f) {
+    this.setState(s => ({ qty: Object.assign({}, s.qty, { [f.id]: Math.max(0, (s.qty[f.id] || 0) - 1) }) }));
+  }
+
+  comprar = () => {
+    if (this.total() !== 2) { this.toast('Selecione os 2 sabores para continuar.'); this.scrollTo('sabores'); return; }
+    this.setState({ loading: true, cart: false });
+    this.track('InitiateCheckout', { value: this.CFG.preco.valor * this.state.cartQty, num_items: this.state.cartQty, sabores: this.resumoKit() });
+    setTimeout(() => {
+      this.setState({ loading: false });
+      const resumo = this.resumoKit();
+      if (this.CFG.checkoutUrl) {
+        window.location.href = this.CFG.checkoutUrl;
+      } else {
+        this.toast('Pedido pronto: ' + resumo + ' — cadastre a URL do checkout em CFG.checkoutUrl.');
+      }
+    }, 900);
+  };
+
+  resumoKit() {
+    return this.FLAVORS.filter(f => (this.state.qty[f.id] || 0) > 0)
+      .map(f => (this.state.qty[f.id] > 1 ? this.state.qty[f.id] + 'x ' : '') + f.nome).join(' + ');
+  }
+
+  renderVals() {
+    const S = this.state, C = this.CFG, tot = this.total(), ready = tot === 2;
+    const mm = String(Math.floor(S.left / 60)).padStart(2, '0'), ss = String(S.left % 60).padStart(2, '0');
+
+    const gallery = [
+      { src: 'lifestyle-ceu.webp', alt: 'Duas unidades BLESSY seguradas ao ar livre', bg: '#eeffea', fit: 'cover', pad: '0px', plate: 'transparent' }
+    ].concat(this.FLAVORS.map(f => ({
+      src: f.img, alt: 'Embalagem BLESSY sabor ' + f.nome, bg: f.bg, fit: 'contain', pad: '34px', plate: 'transparent'
+    })));
+    const gi = Math.min(S.gi, gallery.length - 1);
+
+    const flavors = this.FLAVORS.map(f => {
+      const q = S.qty[f.id] || 0;
+      return {
+        id: f.id, nome: f.nome, emoji: f.emoji, bg: f.bg, desc: f.desc, vitrine: f.vitrine, img: f.img,
+        alt: 'Embalagem BLESSY greens & superfoods sabor ' + f.nome,
+        qty: q, checked: q > 0, isNew: !!f.novo,
+        ring: q > 0 ? '#336633' : 'rgba(31,51,33,.08)',
+        anim: S.pop === f.id ? 'bvlPop .34s ease' : 'none',
+        inc: () => this.inc(f), dec: () => this.dec(f),
+        addKit: () => { this.inc(f); this.scrollTo('sabores'); }
+      };
+    });
+
+    const infoNome = (this.FLAVORS.find(f => f.id === S.ing) || {}).nome || '';
+    const infoItens = this.INFO_ITENS.map(([k, titulo]) => ({
+      titulo, open: S.acc === k, sinal: S.acc === k ? '−' : '+',
+      texto: (C.infoRotulo[S.ing] || {})[k] || (titulo + ' do sabor ' + infoNome + ': preencher exatamente com o que está impresso no rótulo da embalagem. Nenhuma informação deve ser criada sem constar no rótulo.'),
+      toggle: () => this.setState(s => ({ acc: s.acc === k ? null : k }))
+    }));
+
+    const faqDados = [
+      ['Quantas unidades estão incluídas?', 'O kit contém duas unidades BLESSY®.'],
+      ['Posso escolher dois sabores diferentes?', 'Sim. É possível escolher dois sabores diferentes ou repetir o mesmo sabor.'],
+      ['Como devo preparar?', 'O produto deve ser preparado conforme as instruções presentes no rótulo da embalagem.'],
+      ['Quanto tempo dura cada embalagem?', 'A duração depende da quantidade de doses informada na embalagem e da frequência de consumo.'],
+      ['O produto substitui refeições?', 'Não. O produto não deve substituir uma alimentação equilibrada.'],
+      ['Posso consumir diariamente?', 'O consumo deve seguir as orientações do fabricante e as informações presentes no rótulo.'],
+      ['Gestantes e lactantes podem consumir?', 'Gestantes, lactantes e pessoas com condições específicas devem consultar um médico ou nutricionista antes do consumo.'],
+      ['Como acompanhar meu pedido?', 'Após o envio, o cliente receberá um código para acompanhar a entrega.'],
+      ['Existe política de troca?', C.trocaPolitica]
+    ];
+    const faqItens = faqDados.map(([pergunta, resposta], i) => ({
+      pergunta, resposta, open: S.faq === i, sinal: S.faq === i ? '−' : '+',
+      toggle: () => this.setState(s => ({ faq: s.faq === i ? null : i }))
+    }));
+
+    const chipsBase = [{ id: 'todos', nome: 'Todos os sabores' }].concat(this.FLAVORS.map(f => ({ id: f.id, nome: f.nome })));
+    const revFiltradas = this.REVIEWS
+      .filter(r => S.rev === 'todos' || r.sid === S.rev)
+;
+    const cores = ['#ffdad9', '#eeffea', '#fde79d', '#ffe3a7'];
+
+    const cartItens = (S.added && tot === 2) ? [{
+      titulo: '2 Unidades BLESSY® — Suco Verde Natural em Pó',
+      sub: 'Sabores: ' + this.resumoKit(),
+      img: (this.FLAVORS.find(f => (S.qty[f.id] || 0) > 0) || this.FLAVORS[0]).img,
+      alt: 'Kit BLESSY com 2 unidades',
+      bg: (this.FLAVORS.find(f => (S.qty[f.id] || 0) > 0) || this.FLAVORS[0]).bg,
+      qtd: S.cartQty,
+      total: this.fmt(C.preco.valor * S.cartQty),
+      inc: () => this.setState(s => ({ cartQty: Math.min(9, s.cartQty + 1) })),
+      dec: () => this.setState(s => ({ cartQty: Math.max(1, s.cartQty - 1) }))
+    }] : [];
+
+    const cols = [
+      ['INSTITUCIONAL', [['Sobre nós', '#topo'], ['Política de privacidade', '#topo'], ['Política de troca', '#faq'], ['Termos de uso', '#topo']]],
+      ['AJUDA', [['Frete e entrega', '#rastreio'], ['Rastrear pedido', '#rastreio'], ['Perguntas frequentes', '#faq'], ['Fale conosco', '#rastreio']]],
+      ['PRODUTO', [['Montar meu kit', '#sabores'], ['Sabores', '#sabores'], ['Como usar', '#preparo'], ['Avaliações', '#avaliacoes']]]
+    ];
+
+    return {
+      annMsg: this.ANUNCIOS[S.ann][1], annIcon: this.ANUNCIOS[S.ann][0],
+      cartCount: cartItens.length ? S.cartQty : 0,
+      toggleSearch: () => this.setState(s => ({ search: !s.search })), searchOpen: S.search,
+      toggleMenu: () => this.setState(s => ({ menu: !s.menu })), closeMenu: () => this.setState({ menu: false }), menuOpen: S.menu,
+      openCart: () => { this.track('AbriuCarrinho', {}, true); this.setState({ cart: true }); },
+      cliqueWhats: () => this.track('Contact', { canal: 'whatsapp' }), closeCart: () => this.setState({ cart: false }), cartOpen: S.cart,
+      stop: (e) => e.stopPropagation(),
+      cartItens, cartVazio: cartItens.length === 0, cartTotal: this.fmt(C.preco.valor * (cartItens.length ? S.cartQty : 0)),
+      goSaboresFromCart: () => { this.setState({ cart: false }); setTimeout(() => this.scrollTo('sabores'), 220); },
+      addCarrinho: () => {
+        if (tot !== 2) { this.toast('Selecione os 2 sabores para adicionar ao carrinho.'); this.scrollTo('sabores'); return; }
+        this.setState({ added: true });
+        this.track('AddToCart', { value: C.preco.valor, sabores: this.resumoKit() });
+        this.comprar();
+      },
+
+      gallery: gallery.map((g, i) => Object.assign({}, g, {
+        on: i === gi ? 'on' : 'off',
+        ring: i === gi ? '#336633' : 'rgba(31,51,33,.1)',
+        select: () => this.setState({ gi: i })
+      })),
+      galleryBg: gallery[gi].bg,
+      galleryCounter: (gi + 1) + ' / ' + gallery.length,
+      barraImgCss: 'url("' + (gallery[gi].fit === 'contain' ? gallery[gi].src : this.FLAVORS[2].img) + '")',
+      prevImg: () => this.setState(s => ({ gi: (s.gi - 1 + gallery.length) % gallery.length })),
+      nextImg: () => this.setState(s => ({ gi: (s.gi + 1) % gallery.length })),
+      toggleFav: () => { if (!S.fav) this.track('AddToWishlist', { value: C.preco.valor }); this.setState(s => ({ fav: !s.fav })); }, favColor: S.fav ? '#e05a58' : '#c3d0c3',
+      zoomMove: (e) => {
+        if (window.innerWidth < 1001) return;
+        const r = e.currentTarget.getBoundingClientRect();
+        const x = ((e.clientX - r.left) / r.width * 100) + '%', y = ((e.clientY - r.top) / r.height * 100) + '%';
+        e.currentTarget.querySelectorAll('[data-zoomimg]').forEach(img => { img.style.transformOrigin = x + ' ' + y; img.style.transform = 'scale(1.85)'; });
+      },
+      zoomOut: (e) => { e.currentTarget.querySelectorAll('[data-zoomimg]').forEach(img => { img.style.transform = 'none'; }); },
+      touchStart: (e) => { this._tx = e.touches[0].clientX; },
+      touchEnd: (e) => {
+        const dx = e.changedTouches[0].clientX - (this._tx || 0);
+        if (Math.abs(dx) < 42) return;
+        this.setState(s => ({ gi: (s.gi + (dx < 0 ? 1 : -1) + gallery.length) % gallery.length }));
+      },
+
+      notaMedia: C.avaliacoes.media, totalAvaliacoesTexto: C.avaliacoes.texto, totalAvaliacoesCurto: C.avaliacoes.curto,
+      precoDe: C.preco.de, precoPor: C.preco.por, parcelamento: C.preco.parcelamento,
+      temPix: !!C.preco.pix, precoPix: C.preco.pix, pixDesconto: C.preco.pixDesconto,
+      timerAtivo: C.cronometro.ativo && S.left > 0, timerLabel: mm + ':' + ss,
+
+      flavors, kitReady: ready, kitIncompleto: !ready, kitResumo: this.resumoKit(),
+      contadorTexto: 'Você selecionou ' + tot + ' de 2 unidades',
+      progresso: (tot / 2 * 100) + '%',
+      comprar: this.comprar,
+      goSabores: () => this.scrollTo('sabores'),
+      barraStatus: ready ? ('Kit pronto: ' + this.resumoKit()) : (tot + ' de 2 sabores selecionados'),
+
+      beneficios: [
+        { icon: '#ic-clock', titulo: 'Rotina mais prática', texto: 'Uma maneira simples de incluir uma bebida de greens no dia a dia.', bg: '#eeffea' },
+        { icon: '#ic-cup', titulo: 'Fácil de preparar', texto: 'Misture a quantidade indicada no rótulo com água.', bg: '#fde79d' },
+        { icon: '#ic-fruit', titulo: 'Sabores frutados', texto: 'Escolha entre diferentes opções refrescantes e tropicais.', bg: '#ffdad9' },
+        { icon: '#ic-leaf', titulo: 'Ideal para vários momentos', texto: 'Pode ser preparado em casa, no trabalho ou após o treino.', bg: '#ffe3a7' },
+        { icon: '#ic-box', titulo: 'Embalagem prática', texto: 'Fácil de guardar e transportar.', bg: '#eeffea' },
+        { icon: '#ic-spark', titulo: 'Kit personalizável', texto: 'Escolha dois sabores iguais ou monte sua própria combinação.', bg: '#fde79d' }
+      ],
+      porQue: [
+        { texto: 'Preparo rápido' }, { texto: 'Fácil de encaixar na rotina' }, { texto: 'Sabores refrescantes' },
+        { texto: 'Kit com duas unidades' }, { texto: 'Escolha personalizada' }, { texto: 'Ideal para casa, trabalho ou academia' }
+      ],
+      etapas: [
+        { num: '1', titulo: 'Adicione', texto: 'Coloque a porção indicada na embalagem em um copo ou coqueteleira.', placeholder: 'ilustração: dose no copo' },
+        { num: '2', titulo: 'Misture', texto: 'Adicione água e misture até obter uma bebida homogênea.', placeholder: 'ilustração: misturando' },
+        { num: '3', titulo: 'Aproveite', texto: 'Consuma conforme as orientações presentes no rótulo.', placeholder: 'ilustração: bebida pronta' }
+      ],
+      mosaico: [
+        { src: 'life-gostosa.webp', alt: 'Cliente com o pote BLESSY sabor melancia', titulo: 'Gostosa de verdade', span: 'span 2', ratio: '4/3' },
+        { src: 'life-copo-verde.webp', alt: 'Cliente bebendo o suco verde BLESSY preparado', titulo: 'Pronto em segundos', span: 'span 1', ratio: '3/4' },
+        { src: 'life-limao.webp', alt: 'Cliente com o pote BLESSY sabor limão', titulo: 'Sabor limão', span: 'span 1', ratio: '3/4' },
+        { src: 'life-degustacao.webp', alt: 'Degustação de BLESSY em evento', titulo: 'Aprovado na degustação', span: 'span 2', ratio: '4/3' },
+        { src: 'life-amarelo.webp', alt: 'Cliente com duas unidades BLESSY sabor melancia', titulo: 'Kit com 2 unidades', span: 'span 1', ratio: '3/4' },
+        { src: 'life-expo-loja.webp', alt: 'Expositor da marca BLESSY em evento', titulo: 'A marca em evidência', span: 'span 1', ratio: '3/4' },
+        { src: 'life-expo-dois.webp', alt: 'Cliente com dois potes BLESSY em evento', titulo: 'Quem prova, escolhe dois', span: 'span 2', ratio: '4/3' }
+      ],
+      comparativo: [
+        { item: 'Preparo rápido', blessy: 'Sim', outros: 'Varia' },
+        { item: 'Kit personalizável', blessy: 'Sim', outros: 'Nem sempre' },
+        { item: 'Sabores frutados', blessy: 'Sim', outros: 'Varia' },
+        { item: 'Fácil de transportar', blessy: 'Sim', outros: 'Nem sempre' },
+        { item: 'Prático para o dia a dia', blessy: 'Sim', outros: 'Varia' }
+      ],
+      garantias: [
+        { icon: '#ic-lock', titulo: 'Pagamento protegido', texto: 'Transações processadas por plataforma de pagamento segura.' },
+        { icon: '#ic-shield', titulo: 'Dados criptografados', texto: 'Suas informações são transmitidas com conexão segura.' },
+        { icon: '#ic-box', titulo: 'Código de rastreamento', texto: 'Enviado após a postagem do pedido.' },
+        { icon: '#ic-chat', titulo: 'Suporte ao cliente', texto: 'Atendimento no horário informado no rodapé.' },
+        { icon: '#ic-refresh', titulo: 'Política de troca transparente', texto: C.trocaPolitica },
+        { icon: '#ic-truck', titulo: 'Entrega para todo o Brasil', texto: 'Prazos e valores calculados no checkout.' }
+      ],
+
+      ingChips: chipsBase.slice(1).map(c => ({
+        nome: c.nome, bg: S.ing === c.id ? '#336633' : '#ffffff',
+        ring: S.ing === c.id ? '#336633' : '#d9e8d9',
+        select: () => this.setState({ ing: c.id, acc: null })
+      })),
+      infoItens, faqItens,
+
+      barras: C.avaliacoes.distribuicao.map(([label, pct]) => ({ label, pct })),
+      revChips: chipsBase.map(c => ({
+        nome: c.nome, bg: S.rev === c.id ? '#fde79d' : '#ffffff',
+        ring: S.rev === c.id ? '#ffb237' : '#e3ece3',
+        select: () => this.setState({ rev: c.id, revAll: false })
+      })),
+      reviewsVisiveis: (S.revAll ? revFiltradas : revFiltradas.slice(0, 6)).map((r, i) => ({
+        nome: r.nome, sabor: r.sabor, texto: r.texto, inicial: r.nome.charAt(0),
+        cor: cores[i % cores.length]
+      })),
+      toggleRevAll: () => this.setState(s => ({ revAll: !s.revAll })),
+      revBtnLabel: S.revAll ? 'Ver menos avaliações' : ('Ver todas as ' + revFiltradas.length + ' avaliações'),
+
+      footerCols: cols.map(([titulo, itens], i) => ({
+        titulo, open: S.fcol === i ? '1' : '0', sinal: S.fcol === i ? '−' : '+',
+        itens: itens.map(([label, href]) => ({ label, href })),
+        toggle: () => this.setState(s => ({ fcol: s.fcol === i ? null : i }))
+      })),
+      whatsHref: 'https://wa.me/' + C.whatsapp.numero + '?text=' + encodeURIComponent(C.whatsapp.msg),
+      empresaRazao: C.empresa.razao, empresaCnpj: C.empresa.cnpj, empresaEndereco: C.empresa.endereco,
+      empresaTelefone: C.empresa.telefone, empresaEmail: C.empresa.email, empresaHorario: C.empresa.horario,
+
+      storiesDisplay: S.videoErro ? 'none' : 'flex',
+      videoFalhou: () => { if (!this.state.videoErro) this.setState({ videoErro: true }); },
+      stories: this.STORIES.map((s, i) => ({ src: s.src, label: s.label, open: () => { this.track('AssistiuVideo', { video: s.label }, true); this.setState({ story: i }); } })),
+      storyOpen: S.story !== null,
+      storySrc: S.story !== null ? this.STORIES[S.story].src : '',
+      storyLabel: S.story !== null ? this.STORIES[S.story].label : '',
+      storyBars: this.STORIES.map((s, i) => ({ bg: i === S.story ? '#fde79d' : 'rgba(255,255,255,.28)' })),
+      closeStory: () => this.setState({ story: null }),
+      prevStory: () => this.setState(s => ({ story: (s.story - 1 + this.STORIES.length) % this.STORIES.length })),
+      nextStory: () => this.setState(s => ({ story: (s.story + 1) % this.STORIES.length })),
+
+      goRotulo: () => this.scrollTo('rotulo'),
+      nutriTabela: [
+        { item: 'Conteúdo', valor: '7g (1 dosador)', peso: '800', bg: '#f4f9f2' },
+        { item: 'Valor Energético', valor: '9,6 kcal', peso: '500', bg: '#ffffff' },
+        { item: 'Carboidratos', valor: '2,4 g', peso: '500', bg: '#ffffff' },
+        { item: 'Fibras Alimentares', valor: '3,7 g', peso: '500', bg: '#ffffff' },
+        { item: 'Açúcares adicionados', valor: '0', peso: '500', bg: '#ffffff' },
+        { item: 'Vitaminas e minerais', valor: '13 vitaminas + 10 minerais', peso: '500', bg: '#ffffff' },
+        { item: 'Superfoods e prebióticos', valor: '17 ingredientes naturais', peso: '500', bg: '#ffffff' }
+      ],
+
+      loading: S.loading, toast: S.toast, temToast: !!S.toast
+    };
+  }
+}
+</script>
+</body>
+</html>
